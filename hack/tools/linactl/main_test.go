@@ -1284,6 +1284,61 @@ func TestValidateLinactlCommandFilesAcceptsRepositoryCommands(t *testing.T) {
 	}
 }
 
+// TestPluginCommandSmokeFixtureIncludesLinactlLocalReplaceDeps verifies the
+// isolated plugin command smoke keeps the local lina-core replacement module
+// available when it copies linactl into a temporary repository.
+func TestPluginCommandSmokeFixtureIncludesLinactlLocalReplaceDeps(t *testing.T) {
+	root, err := fileutil.DiscoverRepoRoot()
+	if err != nil {
+		t.Fatalf("discover repo root: %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "reusable-plugin-command-smoke.yml"))
+	if err != nil {
+		t.Fatalf("read plugin command smoke workflow: %v", err)
+	}
+	text := string(content)
+	for _, expected := range []string{
+		`cp apps/lina-core/go.mod "$smoke_root/apps/lina-core/go.mod"`,
+		`cp apps/lina-core/go.sum "$smoke_root/apps/lina-core/go.sum"`,
+		`cp -R apps/lina-core/pkg/pluginbridge "$smoke_root/apps/lina-core/pkg/pluginbridge"`,
+		`cp -R apps/lina-core/pkg/plugindb "$smoke_root/apps/lina-core/pkg/plugindb"`,
+		`./apps/lina-core`,
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("plugin command smoke workflow missing %q", expected)
+		}
+	}
+}
+
+// TestMakeCommandSmokeDevFixtureIncludesLinactlLocalReplaceDeps verifies the
+// isolated dev command smoke keeps linactl's local lina-core replacement module
+// available even when the fixture backend is intentionally lightweight.
+func TestMakeCommandSmokeDevFixtureIncludesLinactlLocalReplaceDeps(t *testing.T) {
+	root, err := fileutil.DiscoverRepoRoot()
+	if err != nil {
+		t.Fatalf("discover repo root: %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "reusable-make-command-smoke.yml"))
+	if err != nil {
+		t.Fatalf("read make command smoke workflow: %v", err)
+	}
+	text := string(content)
+	for _, expected := range []string{
+		`cp apps/lina-core/go.mod "$smoke_root/apps/lina-core/go.mod"`,
+		`cp apps/lina-core/go.sum "$smoke_root/apps/lina-core/go.sum"`,
+		`cp -R apps/lina-core/pkg/pluginbridge "$smoke_root/apps/lina-core/pkg/pluginbridge"`,
+		`cp -R apps/lina-core/pkg/plugindb "$smoke_root/apps/lina-core/pkg/plugindb"`,
+		`./apps/lina-core`,
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("make command smoke workflow missing %q", expected)
+		}
+	}
+	if strings.Contains(text, "module smoke-core") {
+		t.Fatalf("make command smoke workflow must preserve the lina-core module path for linactl local replace")
+	}
+}
+
 // TestFrontendTurboAllowsSourcePluginBuildEnv guards plugin-full frontend page discovery.
 func TestFrontendTurboAllowsSourcePluginBuildEnv(t *testing.T) {
 	root, err := fileutil.DiscoverRepoRoot()
