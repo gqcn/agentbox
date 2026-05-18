@@ -43,6 +43,7 @@ import {
 import { refreshAccessibleState } from '#/router/access-refresh';
 import { useAuthStore, useTenantStore } from '#/store';
 import { useMessageStore } from '#/store/message';
+import { formatTimestamp } from '#/utils/time';
 import LoginForm from '#/views/_core/authentication/login.vue';
 import NoticePreviewModal from '#/views/system/message/notice-preview-modal.vue';
 
@@ -68,7 +69,7 @@ const notifications = computed<NotificationItem[]>(() =>
   messageStore.messages.map((msg) => ({
     id: msg.id,
     avatar: '',
-    date: msg.createdAt,
+    date: formatTimestamp(msg.createdAt),
     isRead: msg.isRead === 1,
     message: msg.title,
     title: msg.typeLabel,

@@ -8,6 +8,7 @@ import (
 
 	v1 "lina-core/api/usermsg/v1"
 	usermsgsvc "lina-core/internal/service/usermsg"
+	"lina-core/pkg/apitime"
 	"lina-core/pkg/statusflag"
 )
 
@@ -36,8 +37,8 @@ func (c *ControllerV1) List(ctx context.Context, req *v1.ListReq) (res *v1.ListR
 			SourceType:   v1.SourceType(item.SourceType),
 			SourceId:     item.SourceId,
 			IsRead:       statusflag.ReadState(item.IsRead),
-			ReadAt:       item.ReadAt,
-			CreatedAt:    item.CreatedAt,
+			ReadAt:       apitime.Milli(item.ReadAt),
+			CreatedAt:    apitime.Milli(item.CreatedAt),
 		})
 	}
 	return &v1.ListRes{List: items, Total: out.Total}, nil

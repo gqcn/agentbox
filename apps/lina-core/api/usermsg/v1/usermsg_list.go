@@ -6,7 +6,6 @@ import (
 	"lina-core/pkg/statusflag"
 
 	"github.com/gogf/gf/v2/frame/g"
-	"github.com/gogf/gf/v2/os/gtime"
 )
 
 // SourceType identifies the business origin of one inbox message.
@@ -47,6 +46,6 @@ type MessageItem struct {
 	SourceType   SourceType           `json:"sourceType" dc:"Source type: notice=notification announcement plugin=dynamic plugin system=system" eg:"notice"`
 	SourceId     int64                `json:"sourceId" dc:"Source ID, this field is used for the current notification announcement preview" eg:"1001"`
 	IsRead       statusflag.ReadState `json:"isRead" dc:"Whether it has been read: 0=unread 1=read" eg:"0"`
-	ReadAt       *gtime.Time          `json:"readAt" dc:"Read time, empty when unread" eg:"2026-04-15 16:00:00"`
-	CreatedAt    *gtime.Time          `json:"createdAt" dc:"Message creation time" eg:"2026-04-15 15:30:00"`
+	ReadAt       *int64               `json:"readAt" dc:"Read time as Unix timestamp in milliseconds, empty when unread" eg:"1776240000000"`
+	CreatedAt    *int64               `json:"createdAt" dc:"Message creation time as Unix timestamp in milliseconds" eg:"1776238200000"`
 }

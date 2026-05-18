@@ -9,6 +9,7 @@ import { Descriptions, DescriptionsItem, Tag } from 'ant-design-vue';
 
 import { messageInfo } from '#/api/system/message';
 import { $t } from '#/locales';
+import { formatTimestamp } from '#/utils/time';
 
 const notice = ref<UserMessageDetail | null>(null);
 const title = computed(
@@ -45,7 +46,7 @@ const [Modal, modalApi] = useVbenModal({
           {{ notice.createdByName || '-' }}
         </DescriptionsItem>
         <DescriptionsItem :label="$t('pages.common.createdAt')">
-          {{ notice.createdAt }}
+          {{ formatTimestamp(notice.createdAt) }}
         </DescriptionsItem>
       </Descriptions>
       <div

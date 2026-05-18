@@ -13,6 +13,7 @@ import (
 	"lina-core/internal/model/do"
 	"lina-core/internal/model/entity"
 	"lina-core/internal/service/datascope"
+	"lina-core/pkg/apitime"
 	"lina-core/pkg/bizerr"
 )
 
@@ -57,14 +58,6 @@ func (s *serviceImpl) List(ctx context.Context, in ListInput) (*ListOutput, erro
 func (s *serviceImpl) BuildTree(list []*entity.SysMenu) []*MenuItem {
 	nodeMap := make(map[int]*MenuItem)
 	for _, m := range list {
-		createdAt := ""
-		if m.CreatedAt != nil {
-			createdAt = m.CreatedAt.String()
-		}
-		updatedAt := ""
-		if m.UpdatedAt != nil {
-			updatedAt = m.UpdatedAt.String()
-		}
 		nodeMap[m.Id] = &MenuItem{
 			Id:         m.Id,
 			ParentId:   m.ParentId,
@@ -82,8 +75,8 @@ func (s *serviceImpl) BuildTree(list []*entity.SysMenu) []*MenuItem {
 			IsCache:    m.IsCache,
 			QueryParam: m.QueryParam,
 			Remark:     m.Remark,
-			CreatedAt:  createdAt,
-			UpdatedAt:  updatedAt,
+			CreatedAt:  apitime.Milli(m.CreatedAt),
+			UpdatedAt:  apitime.Milli(m.UpdatedAt),
 			Children:   make([]*MenuItem, 0),
 		}
 	}

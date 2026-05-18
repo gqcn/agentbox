@@ -9,6 +9,7 @@ import (
 	"lina-core/internal/model/entity"
 	"lina-core/internal/service/jobmeta"
 	jobmgmtsvc "lina-core/internal/service/jobmgmt"
+	"lina-core/pkg/apitime"
 )
 
 // List handles scheduled job log list requests.
@@ -53,12 +54,12 @@ func jobLogItem(log *entity.SysJobLog) v1.JobLogItem {
 		NodeId:         log.NodeId,
 		Trigger:        v1.Trigger(log.Trigger),
 		ParamsSnapshot: log.ParamsSnapshot,
-		StartAt:        log.StartAt,
-		EndAt:          log.EndAt,
+		StartAt:        apitime.Milli(log.StartAt),
+		EndAt:          apitime.Milli(log.EndAt),
 		DurationMs:     log.DurationMs,
 		Status:         v1.Status(log.Status),
 		ErrMsg:         log.ErrMsg,
 		ResultJson:     log.ResultJson,
-		CreatedAt:      log.CreatedAt,
+		CreatedAt:      apitime.Milli(log.CreatedAt),
 	}
 }

@@ -25,6 +25,7 @@
 
 - [x] **FB-1**: `make env.check` 使用带框表格展示，并通过 `apps/lina-core/manifest/config/config.yaml` 的数据库连接检测 PostgreSQL 服务端版本；无法检测时在 Remark 中说明原因。
 - [x] **FB-2**: PostgreSQL 版本检测必须使用 Go 数据库连接直接查询，不依赖 `psql` 客户端工具。
+- [x] **FB-3**: `TestRunEnvSetupInstallsFrontendAndPlaywright` 在缺少真实 `pnpm` 的 CI 环境中不应因测试替身被 `PATH` 预检提前绕过而失败。
 
 反馈执行记录：
 - 已将 `env.check` 输出改为稳定的 ASCII 带框表格，表头包含 `Name`、`Current Version`、`Required Version`、`Satisfied`、`Remark`。
@@ -33,3 +34,4 @@
 - 本次仅修改跨平台 Go 开发工具与 OpenSpec 任务记录；不涉及运行时 API、数据库 Schema、权限模型、数据权限、缓存策略、前端页面或 i18n JSON 资源。
 - 验证通过：`cd hack/tools/linactl && go test . -count=1`、`cd hack/tools/linactl && go run . test.scripts`、`openspec validate dev-environment-commands --strict`、`make env.check`。
 - 已按 FB-2 移除 PostgreSQL 检测对 `psql` 客户端工具的依赖，改用 `database/sql` 与 Go PostgreSQL driver 直接连接并执行 `SHOW server_version`；测试覆盖 Go driver 查询成功、查询失败 Remark 和配置类型错误。
+- 已按 FB-3 将 `linactl` 子命令的工具查找依赖收敛为 `app.lookPath`，生产默认仍使用 `exec.LookPath`，测试可与 `execCommand` 替身同步注入，避免 CI 缺少真实 `pnpm` 时测试在执行替身前失败；新增 `TestRunCommandReportsMissingToolBeforeExecution` 锁定缺工具时仍在启动子进程前返回可读 PATH 诊断。验证通过：`cd hack/tools/linactl && go test . -run 'TestRunEnvSetupInstallsFrontendAndPlaywright|TestRunCommandReportsMissingToolBeforeExecution' -count=1`、`cd hack/tools/linactl && go test . -count=1`、`cd hack/tools/linactl && go run . test.scripts`、`openspec validate dev-environment-commands --strict`、`git diff --check -- hack/tools/linactl/constants_types.go hack/tools/linactl/app.go hack/tools/linactl/main_test.go openspec/changes/dev-environment-commands/tasks.md`。本次仅修改跨平台 Go 开发工具测试隔离与 OpenSpec 任务记录；不涉及运行时 API、数据库 Schema、权限模型、数据权限、缓存策略、前端页面或 i18n JSON 资源。

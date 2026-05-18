@@ -4,8 +4,6 @@ package v1
 import (
 	"lina-core/pkg/statusflag"
 	"lina-core/pkg/tenantoverride"
-
-	"github.com/gogf/gf/v2/os/gtime"
 )
 
 // DictDataItem exposes dictionary data fields visible to management callers.
@@ -25,8 +23,8 @@ type DictDataItem struct {
 	CanEdit        bool                `json:"canEdit" dc:"Whether the current context may directly edit this returned row" eg:"false"`
 	CanOverride    bool                `json:"canOverride" dc:"Whether the current tenant may create its own override for this fallback row" eg:"true"`
 	OverrideMode   tenantoverride.Mode `json:"overrideMode" dc:"Override action mode, such as none or createTenantOverride" eg:"createTenantOverride"`
-	CreatedAt      *gtime.Time         `json:"createdAt" dc:"Creation time" eg:"2026-05-14 10:00:00"`
-	UpdatedAt      *gtime.Time         `json:"updatedAt" dc:"Update time" eg:"2026-05-14 10:00:00"`
+	CreatedAt      *int64              `json:"createdAt" dc:"Creation time as Unix timestamp in milliseconds" eg:"1778733600000"`
+	UpdatedAt      *int64              `json:"updatedAt" dc:"Update time as Unix timestamp in milliseconds" eg:"1778733600000"`
 }
 
 // DictTypeItem exposes dictionary type fields visible to management callers.
@@ -43,8 +41,8 @@ type DictTypeItem struct {
 	CanEdit             bool                `json:"canEdit" dc:"Whether the current context may directly edit this returned row" eg:"false"`
 	CanOverride         bool                `json:"canOverride" dc:"Whether the current tenant may create its own override for this fallback row" eg:"true"`
 	OverrideMode        tenantoverride.Mode `json:"overrideMode" dc:"Override action mode, such as none or createTenantOverride" eg:"createTenantOverride"`
-	CreatedAt           *gtime.Time         `json:"createdAt" dc:"Creation time" eg:"2026-05-14 10:00:00"`
-	UpdatedAt           *gtime.Time         `json:"updatedAt" dc:"Update time" eg:"2026-05-14 10:00:00"`
+	CreatedAt           *int64              `json:"createdAt" dc:"Creation time as Unix timestamp in milliseconds" eg:"1778733600000"`
+	UpdatedAt           *int64              `json:"updatedAt" dc:"Update time as Unix timestamp in milliseconds" eg:"1778733600000"`
 }
 
 // DictTypeOptionItem exposes dictionary type option fields for selectors.

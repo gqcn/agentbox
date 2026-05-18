@@ -9,6 +9,7 @@ import (
 	"lina-core/internal/model/entity"
 	"lina-core/internal/service/jobmeta"
 	jobmgmtsvc "lina-core/internal/service/jobmgmt"
+	"lina-core/pkg/apitime"
 	"lina-core/pkg/statusflag"
 )
 
@@ -74,7 +75,7 @@ func jobItem(job *entity.SysJob) v1.JobItem {
 		SeedVersion:          job.SeedVersion,
 		CreatedBy:            job.CreatedBy,
 		UpdatedBy:            job.UpdatedBy,
-		CreatedAt:            job.CreatedAt,
-		UpdatedAt:            job.UpdatedAt,
+		CreatedAt:            apitime.Milli(job.CreatedAt),
+		UpdatedAt:            apitime.Milli(job.UpdatedAt),
 	}
 }

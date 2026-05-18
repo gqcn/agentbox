@@ -3,8 +3,6 @@ package v1
 
 import (
 	"lina-core/pkg/statusflag"
-
-	"github.com/gogf/gf/v2/os/gtime"
 )
 
 // UserItem exposes the user fields that are safe for API callers.
@@ -19,7 +17,7 @@ type UserItem struct {
 	Avatar    string             `json:"avatar" dc:"Avatar URL" eg:"/resource/file/avatar.png"`
 	Status    statusflag.Enabled `json:"status" dc:"Status: 0=disabled 1=enabled" eg:"1"`
 	Remark    string             `json:"remark" dc:"Remark" eg:"System administrator"`
-	LoginDate *gtime.Time        `json:"loginDate" dc:"Last login time" eg:"2026-05-14 10:00:00"`
-	CreatedAt *gtime.Time        `json:"createdAt" dc:"Creation time" eg:"2026-05-14 10:00:00"`
-	UpdatedAt *gtime.Time        `json:"updatedAt" dc:"Update time" eg:"2026-05-14 10:00:00"`
+	LoginDate *int64             `json:"loginDate" dc:"Last login time as Unix timestamp in milliseconds" eg:"1778733600000"`
+	CreatedAt *int64             `json:"createdAt" dc:"Creation time as Unix timestamp in milliseconds" eg:"1778733600000"`
+	UpdatedAt *int64             `json:"updatedAt" dc:"Update time as Unix timestamp in milliseconds" eg:"1778733600000"`
 }

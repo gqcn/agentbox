@@ -34,8 +34,8 @@ type MenuItem struct {
 	IsCache    statusflag.YesNo      `json:"isCache" dc:"Whether to cache: 1=yes 0=no" eg:"0"`
 	QueryParam string                `json:"queryParam" dc:"Route parameters (JSON format)" eg:""`
 	Remark     string                `json:"remark" dc:"Remarks" eg:""`
-	CreatedAt  string                `json:"createdAt" dc:"creation time" eg:"2025-01-01 00:00:00"`
-	UpdatedAt  string                `json:"updatedAt" dc:"Update time" eg:"2025-01-01 00:00:00"`
+	CreatedAt  *int64                `json:"createdAt" dc:"Creation time as Unix timestamp in milliseconds" eg:"1735689600000"`
+	UpdatedAt  *int64                `json:"updatedAt" dc:"Update time as Unix timestamp in milliseconds" eg:"1735689600000"`
 	Children   []*MenuItem           `json:"children" dc:"Submenu list" eg:"[]"`
 }
 

@@ -8,6 +8,7 @@ import (
 
 	v1 "lina-core/api/config/v1"
 	"lina-core/internal/service/sysconfig"
+	"lina-core/pkg/apitime"
 	"lina-core/pkg/statusflag"
 	"lina-core/pkg/tenantoverride"
 )
@@ -50,7 +51,7 @@ func configItem(item *sysconfig.ConfigProjection) v1.ConfigItem {
 		CanEdit:        item.CanEdit,
 		CanOverride:    item.CanOverride,
 		OverrideMode:   tenantoverride.Mode(item.OverrideMode),
-		CreatedAt:      item.CreatedAt,
-		UpdatedAt:      item.UpdatedAt,
+		CreatedAt:      apitime.Milli(item.CreatedAt),
+		UpdatedAt:      apitime.Milli(item.UpdatedAt),
 	}
 }

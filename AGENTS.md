@@ -88,6 +88,18 @@
 5. **URL 设计使用名词复数或资源名**：如 `/user`、`/dept`、`/dict/type`，避免在 URL 中使用动词（如 `/getUser`、`/deleteUser`）
 6. **子资源使用嵌套路径**：如 `/dept/{id}/users`、`/user/{id}/status`
 
+## API响应时间字段契约
+
+为满足国际化、多时区和前端页面差异化展示要求，公开 HTTP JSON 响应 DTO 中表示具体时间点的字段必须统一返回 Unix 毫秒时间戳，由前端根据页面和用户语言环境自行格式化展示。
+
+**强制规则**：
+
+1. **时间点字段使用 Unix 毫秒时间戳**：`createdAt`、`updatedAt`、`deletedAt`、`loginAt`、`startedAt`、`endedAt`、`expiredAt`、`lastRunAt`等表示具体时间点的响应字段，JSON 类型必须为数字，Go DTO 类型必须为`int64`或`*int64`
+2. **禁止响应 DTO 暴露时间对象或格式化时间点字符串**：公开响应 DTO 不得直接使用`time.Time`、`*time.Time`、`gtime.Time`、`*gtime.Time`作为时间点字段类型，也不得将时间点格式化为字符串返回
+3. **规则仅约束 API 响应边界**：`dao`、`do`、`entity`、`service`等内部模型仍可使用 Go 时间类型；在投影到公开响应 DTO 时完成 Unix 毫秒时间戳转换
+4. **日历日期字段必须显式说明语义**：`birthday`、`businessDate`、`periodDate`等只表示日历日期、不表示具体时间点的字段可以使用`YYYY-MM-DD`字符串，但字段`dc`或接口文档必须明确说明`date-only`语义，禁止让调用方推断服务端时区中的具体时间点
+5. **接口文档必须声明单位**：时间点响应字段的`dc`或接口文档必须包含`Unix timestamp in milliseconds`说明，避免调用方混淆秒、毫秒或其他单位
+
 # 代码开发规范
 
 ## 开发工具与脚本规范

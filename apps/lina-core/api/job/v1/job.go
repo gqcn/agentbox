@@ -3,8 +3,6 @@ package v1
 
 import (
 	"lina-core/pkg/statusflag"
-
-	"github.com/gogf/gf/v2/os/gtime"
 )
 
 // TaskType identifies the scheduled-job execution mode.
@@ -81,6 +79,6 @@ type JobItem struct {
 	SeedVersion          int              `json:"seedVersion" dc:"Built-in seed version" eg:"1"`
 	CreatedBy            int64            `json:"createdBy" dc:"Creator user ID" eg:"1"`
 	UpdatedBy            int64            `json:"updatedBy" dc:"Updater user ID" eg:"1"`
-	CreatedAt            *gtime.Time      `json:"createdAt" dc:"Creation time" eg:"2026-05-14 10:00:00"`
-	UpdatedAt            *gtime.Time      `json:"updatedAt" dc:"Update time" eg:"2026-05-14 10:00:00"`
+	CreatedAt            *int64           `json:"createdAt" dc:"Creation time as Unix timestamp in milliseconds" eg:"1778733600000"`
+	UpdatedAt            *int64           `json:"updatedAt" dc:"Update time as Unix timestamp in milliseconds" eg:"1778733600000"`
 }

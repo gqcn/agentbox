@@ -80,7 +80,12 @@ compatibility: 依赖 OpenSpec CLI、GoFrame v2 技能、lina-e2e 技能。
 对照 `AGENTS.md` `API` 设计规范进行检查，包括：
 1. `HTTP` 方法和资源路径是否符合 `RESTful` 规则
 2. `API DTO` 文档元数据的完整性
-3. `API` 文档国际化合规性：
+3. `API` 响应时间字段契约：
+   - 公开 `HTTP JSON` 响应 `DTO` 中表示具体时间点的字段必须使用 Unix 毫秒时间戳，`JSON` 类型为数字，`Go DTO` 类型为 `int64` 或 `*int64`
+   - 新增或修改的时间点字段不得直接使用 `time.Time`、`*time.Time`、`gtime.Time`、`*gtime.Time`，也不得以格式化字符串返回
+   - 时间点字段的 `dc` 或接口文档必须包含 `Unix timestamp in milliseconds` 单位说明
+   - `birthday`、`businessDate`、`periodDate` 等只表示日历日期的字段可以使用 `YYYY-MM-DD` 字符串，但必须在 `dc` 或接口文档中明确 `date-only` 语义
+4. `API` 文档国际化合规性：
    - `g.Meta` 和手写的 `DTO` 文档标签必须使用可读的英文源文本，禁止使用中文源文本或不透明的国际化占位符
    - 接口文档本地化必须使用专用的 `apidoc i18n JSON` 资源，与运行时前端 `UI` 的 `i18n` 语言包隔离
    - 必须使用稳定的结构化 `apidoc` 键而非源文本键；宿主 `core.*` `apidoc` 键保留在 `lina-core` 资源中，插件 `plugins.*` `apidoc` 键保留在各插件自己的 `manifest/i18n/<locale>/apidoc/**/*.json` 中

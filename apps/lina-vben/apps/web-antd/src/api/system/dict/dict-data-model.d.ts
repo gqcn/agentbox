@@ -14,8 +14,8 @@ export interface DictData {
   canEdit: boolean;
   canOverride: boolean;
   overrideMode: 'createTenantOverride' | 'none';
-  createdAt: string;
-  updatedAt: string;
+  createdAt: number | null;
+  updatedAt: number | null;
 }
 
 export interface DictDataListParams {

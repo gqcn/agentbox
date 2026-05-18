@@ -157,7 +157,7 @@ type PluginItem struct {
 	Type                    PluginType                   `json:"type" dc:"Plugin first-level type: source=source plugin dynamic=dynamic plugin" eg:"source"`
 	Description             string                       `json:"description" dc:"Plugin description" eg:"Source plugin that provides left-side menu pages and public/protected routing examples"`
 	Installed               statusflag.Installation      `json:"installed" dc:"Installation status: 1=installed 0=not installed; the source plugin can still be in the uninstalled state by default after being discovered by the host" eg:"1"`
-	InstalledAt             string                       `json:"installedAt" dc:"Plugin installation time, returns an empty string if it is not installed." eg:"2026-01-01 12:00:00"`
+	InstalledAt             *int64                       `json:"installedAt" dc:"Plugin installation time as Unix timestamp in milliseconds, empty if it is not installed" eg:"1767240000000"`
 	Enabled                 statusflag.Enabled           `json:"enabled" dc:"Enabled status: 1=enabled 0=disabled" eg:"1"`
 	AutoEnableManaged       statusflag.YesNo             `json:"autoEnableManaged" dc:"Whether it is hit by plugin.autoEnable in the host's main configuration file: 1=yes 0=no; if hit, it means that the host will ensure that the plugin is enabled when it starts." eg:"1"`
 	AutoEnableForNewTenants bool                         `json:"autoEnableForNewTenants" dc:"Platform policy: whether installed and enabled tenant-scoped plugins are enabled for new tenants automatically" eg:"true"`
@@ -165,7 +165,7 @@ type PluginItem struct {
 	ScopeNature             ScopeNature                  `json:"scopeNature" dc:"Plugin scope nature: platform_only or tenant_aware" eg:"tenant_aware"`
 	InstallMode             InstallMode                  `json:"installMode" dc:"Plugin install mode: global or tenant_scoped" eg:"tenant_scoped"`
 	StatusKey               string                       `json:"statusKey" dc:"The location key name of the plugin status in the system plugin registry. The frontend registry monitor will use this key to determine whether the plugin status needs to be refreshed." eg:"sys_plugin.status:plugin-demo-source"`
-	UpdatedAt               string                       `json:"updatedAt" dc:"Plugin registry last updated time" eg:"2026-01-01 12:00:00"`
+	UpdatedAt               *int64                       `json:"updatedAt" dc:"Plugin registry last updated time as Unix timestamp in milliseconds" eg:"1767240000000"`
 	AuthorizationRequired   statusflag.YesNo             `json:"authorizationRequired" dc:"Whether there is a hostServices resource application that needs to be confirmed during installation/activation: 1=Yes 0=No" eg:"1"`
 	AuthorizationStatus     AuthorizationStatus          `json:"authorizationStatus" dc:"Current authorization status: not_required=no confirmation required pending=to be confirmed confirmed=confirmed" eg:"confirmed"`
 	HasMockData             statusflag.YesNo             `json:"hasMockData" dc:"Whether the plugin ships any mock-data SQL files under manifest/sql/mock-data/: 1=yes 0=no. The frontend uses this to decide whether to render the optional Install mock data checkbox in the install dialog." eg:"1"`

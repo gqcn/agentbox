@@ -8,6 +8,7 @@ import (
 	"lina-core/api/jobgroup/v1"
 	"lina-core/internal/model/entity"
 	jobmgmtsvc "lina-core/internal/service/jobmgmt"
+	"lina-core/pkg/apitime"
 	"lina-core/pkg/statusflag"
 )
 
@@ -49,7 +50,7 @@ func jobGroupItem(group *entity.SysJobGroup) v1.JobGroupItem {
 		Remark:    group.Remark,
 		SortOrder: group.SortOrder,
 		IsDefault: statusflag.YesNo(group.IsDefault),
-		CreatedAt: group.CreatedAt,
-		UpdatedAt: group.UpdatedAt,
+		CreatedAt: apitime.Milli(group.CreatedAt),
+		UpdatedAt: apitime.Milli(group.UpdatedAt),
 	}
 }

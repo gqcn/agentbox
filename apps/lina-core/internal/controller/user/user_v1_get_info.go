@@ -9,6 +9,7 @@ import (
 
 	v1 "lina-core/api/user/v1"
 	"lina-core/internal/service/menu"
+	"lina-core/pkg/apitime"
 	"lina-core/pkg/menutype"
 	"lina-core/pkg/statusflag"
 )
@@ -98,8 +99,8 @@ func (c *ControllerV1) GetInfo(ctx context.Context, req *v1.GetInfoReq) (res *v1
 						IsCache:    m.IsCache,
 						QueryParam: m.QueryParam,
 						Remark:     m.Remark,
-						CreatedAt:  m.CreatedAt.String(),
-						UpdatedAt:  m.UpdatedAt.String(),
+						CreatedAt:  apitime.Milli(m.CreatedAt),
+						UpdatedAt:  apitime.Milli(m.UpdatedAt),
 						Children:   make([]*menu.MenuItem, 0),
 					})
 				}

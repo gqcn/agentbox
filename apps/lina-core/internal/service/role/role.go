@@ -251,8 +251,8 @@ type RoleItem struct {
 	DataScope int    `json:"dataScope"`
 	Status    int    `json:"status"`
 	Remark    string `json:"remark"`
-	CreatedAt string `json:"createdAt"`
-	UpdatedAt string `json:"updatedAt"`
+	CreatedAt *int64 `json:"createdAt"`
+	UpdatedAt *int64 `json:"updatedAt"`
 }
 
 // GetDetailOutput defines output for GetDetail function.
@@ -305,7 +305,7 @@ type RoleUserItem struct {
 	Email     string `json:"email"`
 	Phone     string `json:"phone"`
 	Status    int    `json:"status"`
-	CreatedAt string `json:"createdAt"`
+	CreatedAt *int64 `json:"createdAt"`
 }
 
 // GetUsersInput defines input for GetUsers function.

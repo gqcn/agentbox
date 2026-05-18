@@ -8,6 +8,7 @@ import (
 
 	v1 "lina-core/api/dict/v1"
 	dictsvc "lina-core/internal/service/dict"
+	"lina-core/pkg/apitime"
 	"lina-core/pkg/statusflag"
 	"lina-core/pkg/tenantoverride"
 )
@@ -52,8 +53,8 @@ func dictDataItem(row *dictsvc.DictDataProjection) v1.DictDataItem {
 		CanEdit:        row.CanEdit,
 		CanOverride:    row.CanOverride,
 		OverrideMode:   tenantoverride.Mode(row.OverrideMode),
-		CreatedAt:      row.CreatedAt,
-		UpdatedAt:      row.UpdatedAt,
+		CreatedAt:      apitime.Milli(row.CreatedAt),
+		UpdatedAt:      apitime.Milli(row.UpdatedAt),
 	}
 }
 
@@ -75,7 +76,7 @@ func dictTypeItem(row *dictsvc.DictTypeProjection) v1.DictTypeItem {
 		CanEdit:             row.CanEdit,
 		CanOverride:         row.CanOverride,
 		OverrideMode:        tenantoverride.Mode(row.OverrideMode),
-		CreatedAt:           row.CreatedAt,
-		UpdatedAt:           row.UpdatedAt,
+		CreatedAt:           apitime.Milli(row.CreatedAt),
+		UpdatedAt:           apitime.Milli(row.UpdatedAt),
 	}
 }

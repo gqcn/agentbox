@@ -9,6 +9,7 @@ import (
 	v1 "lina-core/api/user/v1"
 	"lina-core/internal/model/entity"
 	usersvc "lina-core/internal/service/user"
+	"lina-core/pkg/apitime"
 	"lina-core/pkg/statusflag"
 )
 
@@ -67,8 +68,8 @@ func userItem(user *entity.SysUser) v1.UserItem {
 		Avatar:    user.Avatar,
 		Status:    statusflag.Enabled(user.Status),
 		Remark:    user.Remark,
-		LoginDate: user.LoginDate,
-		CreatedAt: user.CreatedAt,
-		UpdatedAt: user.UpdatedAt,
+		LoginDate: apitime.Milli(user.LoginDate),
+		CreatedAt: apitime.Milli(user.CreatedAt),
+		UpdatedAt: apitime.Milli(user.UpdatedAt),
 	}
 }

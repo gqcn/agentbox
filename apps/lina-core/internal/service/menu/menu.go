@@ -104,8 +104,8 @@ type MenuItem struct {
 	IsCache    int         `json:"isCache"`
 	QueryParam string      `json:"queryParam"`
 	Remark     string      `json:"remark"`
-	CreatedAt  string      `json:"createdAt"`
-	UpdatedAt  string      `json:"updatedAt"`
+	CreatedAt  *int64      `json:"createdAt"`
+	UpdatedAt  *int64      `json:"updatedAt"`
 	Children   []*MenuItem `json:"children"`
 }
 

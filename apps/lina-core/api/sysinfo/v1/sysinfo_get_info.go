@@ -43,9 +43,9 @@ type CacheCoordinationInfo struct {
 	Healthy          bool   `json:"healthy" dc:"Whether the coordination backend was healthy when this snapshot was collected" eg:"true"`
 	LocalRevision    int64  `json:"localRevision" dc:"Latest revision consumed by this host process" eg:"5"`
 	SharedRevision   int64  `json:"sharedRevision" dc:"Latest shared revision observed from the coordination store" eg:"5"`
-	LastSyncedAt     string `json:"lastSyncedAt" dc:"Latest successful local synchronization time, empty when not yet synchronized" eg:"2025-01-01 08:00:00"`
+	LastSyncedAt     *int64 `json:"lastSyncedAt" dc:"Latest successful local synchronization time as Unix timestamp in milliseconds, empty when not yet synchronized" eg:"1735718400000"`
 	EventSubscriber  bool   `json:"eventSubscriber" dc:"Whether the coordination event subscriber is currently running" eg:"true"`
-	LastEventAt      string `json:"lastEventAt" dc:"Latest consumed coordination event time, empty when no event has been received" eg:"2025-01-01 08:00:01"`
+	LastEventAt      *int64 `json:"lastEventAt" dc:"Latest consumed coordination event time as Unix timestamp in milliseconds, empty when no event has been received" eg:"1735718401000"`
 	RecentError      string `json:"recentError" dc:"Most recent coordination failure message, empty when healthy" eg:""`
 	StaleSeconds     int64  `json:"staleSeconds" dc:"Seconds elapsed since the latest successful local synchronization" eg:"1"`
 }
@@ -58,7 +58,7 @@ type CoordinationInfo struct {
 	RedisHealthy   bool   `json:"redisHealthy" dc:"Whether the Redis coordination backend is currently healthy" eg:"true"`
 	NodeId         string `json:"nodeId" dc:"Stable identifier of the current host node" eg:"node-a"`
 	Primary        bool   `json:"primary" dc:"Whether the current node owns primary-node responsibilities" eg:"true"`
-	LastSuccessAt  string `json:"lastSuccessAt" dc:"Latest successful coordination health-check time, empty when unavailable" eg:"2025-01-01 08:00:00"`
+	LastSuccessAt  *int64 `json:"lastSuccessAt" dc:"Latest successful coordination health-check time as Unix timestamp in milliseconds, empty when unavailable" eg:"1735718400000"`
 	LastError      string `json:"lastError" dc:"Sanitized latest coordination health error, empty when healthy" eg:""`
 }
 
@@ -70,7 +70,7 @@ type GetInfoRes struct {
 	Os                 string                  `json:"os" dc:"operating system" eg:"linux"`
 	Arch               string                  `json:"arch" dc:"System architecture" eg:"amd64"`
 	DbVersion          string                  `json:"dbVersion" dc:"Database version" eg:"PostgreSQL 14.0"`
-	StartTime          string                  `json:"startTime" dc:"System startup time" eg:"2025-01-01 08:00:00"`
+	StartTime          *int64                  `json:"startTime" dc:"System startup time as Unix timestamp in milliseconds" eg:"1735718400000"`
 	RunDuration        string                  `json:"runDuration" dc:"System running time" eg:"3 days, 5 hours and 20 minutes"`
 	RunDurationSeconds int64                   `json:"runDurationSeconds" dc:"System running time represented as total seconds for client-side structured formatting" eg:"12345"`
 	BackendComponents  []ComponentInfo         `json:"backendComponents" dc:"Backend component list" eg:"[]"`

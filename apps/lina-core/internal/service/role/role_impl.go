@@ -7,11 +7,13 @@ package role
 
 import (
 	"context"
+
 	"lina-core/internal/dao"
 	"lina-core/internal/model/do"
 	"lina-core/internal/model/entity"
 	"lina-core/internal/service/datascope"
 	tenantcapsvc "lina-core/internal/service/tenantcap"
+	"lina-core/pkg/apitime"
 	"lina-core/pkg/bizerr"
 	"lina-core/pkg/orgcap"
 	pkgtenantcap "lina-core/pkg/tenantcap"
@@ -89,14 +91,6 @@ func (s *serviceImpl) List(ctx context.Context, in ListInput) (*ListOutput, erro
 	// Convert to response format
 	list := make([]*RoleItem, 0, len(roles))
 	for _, r := range roles {
-		createdAt := ""
-		if r.CreatedAt != nil {
-			createdAt = r.CreatedAt.String()
-		}
-		updatedAt := ""
-		if r.UpdatedAt != nil {
-			updatedAt = r.UpdatedAt.String()
-		}
 		list = append(list, &RoleItem{
 			Id:        r.Id,
 			Name:      s.DisplayName(ctx, r),
@@ -105,8 +99,8 @@ func (s *serviceImpl) List(ctx context.Context, in ListInput) (*ListOutput, erro
 			DataScope: r.DataScope,
 			Status:    r.Status,
 			Remark:    r.Remark,
-			CreatedAt: createdAt,
-			UpdatedAt: updatedAt,
+			CreatedAt: apitime.Milli(r.CreatedAt),
+			UpdatedAt: apitime.Milli(r.UpdatedAt),
 		})
 	}
 
@@ -598,10 +592,6 @@ func (s *serviceImpl) GetUsers(ctx context.Context, in GetUsersInput) (*GetUsers
 	// Convert to response format
 	list := make([]*RoleUserItem, 0, len(users))
 	for _, u := range users {
-		createdAt := ""
-		if u.CreatedAt != nil {
-			createdAt = u.CreatedAt.String()
-		}
 		list = append(list, &RoleUserItem{
 			Id:        u.Id,
 			Username:  u.Username,
@@ -609,7 +599,7 @@ func (s *serviceImpl) GetUsers(ctx context.Context, in GetUsersInput) (*GetUsers
 			Email:     u.Email,
 			Phone:     u.Phone,
 			Status:    u.Status,
-			CreatedAt: createdAt,
+			CreatedAt: apitime.Milli(u.CreatedAt),
 		})
 	}
 
