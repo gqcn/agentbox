@@ -13,6 +13,7 @@ import {
   pgEscapeLiteral,
   queryPgRows,
 } from "../../../support/postgres";
+import { waitForRouteReady } from "../../../support/ui";
 
 const apiBaseURL =
   process.env.E2E_API_BASE_URL ?? "http://127.0.0.1:8080/api/v1/";
@@ -415,6 +416,13 @@ async function triggerPluginRegistryFocusCheck(page: Page) {
   });
 }
 
+async function reloadHostProjection(page: Page) {
+  await page.goto("/dashboard/workspace", { waitUntil: "domcontentloaded" });
+  await waitForRouteReady(page, 15000);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await waitForRouteReady(page, 15000);
+}
+
 async function bootstrapEnabledRuntimePlugin(
   page: Page,
   adminApi: APIRequestContext,
@@ -438,7 +446,7 @@ async function bootstrapEnabledRuntimePlugin(
     enabled: 1,
   });
 
-  await triggerPluginRegistryFocusCheck(page);
+  await reloadHostProjection(page);
   await expect(pluginPage.sidebarMenuItem(pluginMenuName)).toBeVisible();
   return pluginPage;
 }

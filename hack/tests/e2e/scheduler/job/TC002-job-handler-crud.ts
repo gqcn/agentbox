@@ -12,6 +12,7 @@ import {
 } from '../../../support/api/job';
 
 test.describe('TC-2 源码注册任务可见且只读', () => {
+  const hostOnly = process.env.E2E_HOST_ONLY_PLUGINS === '1';
   let api: APIRequestContext;
   let originalShellSwitch: { id: number; value: string } | null = null;
 
@@ -31,7 +32,9 @@ test.describe('TC-2 源码注册任务可见且只读', () => {
   test('TC-2a~e: 宿主内置任务应显示在列表中，公共新增入口不再支持 Handler，源码任务仅可查看详情', async ({
     adminPage,
   }) => {
-    const expectedBuiltinNames = ['任务日志清理', '在线会话清理', '服务监控采集'];
+    const expectedBuiltinNames = hostOnly
+      ? ['任务日志清理', '在线会话清理']
+      : ['任务日志清理', '在线会话清理', '服务监控采集'];
 
     for (const name of expectedBuiltinNames) {
       const result = await listJobs(api, name);

@@ -1,13 +1,15 @@
 import { test, expect } from '../../../fixtures/auth';
 import { DictPage } from '../../../pages/DictPage';
 
+const hostBuiltinDictType = 'sys_menu_status';
+
 test.describe('TC006 字典数据面板无独立导出导入功能', () => {
   test('TC006a: 字典数据面板没有导出按钮', async ({ adminPage }) => {
     const dictPage = new DictPage(adminPage);
     await dictPage.goto();
 
     // Select a dict type row to load dict data in right panel
-    await dictPage.clickTypeRow('sys_oper_type');
+    await dictPage.clickTypeRow(hostBuiltinDictType);
 
     // Data panel should NOT have export button
     const dataPanel = adminPage.locator('#dict-data');
@@ -20,7 +22,7 @@ test.describe('TC006 字典数据面板无独立导出导入功能', () => {
     await dictPage.goto();
 
     // Select a dict type row to load dict data in right panel
-    await dictPage.clickTypeRow('sys_oper_type');
+    await dictPage.clickTypeRow(hostBuiltinDictType);
 
     // Data panel should NOT have import button
     const dataPanel = adminPage.locator('#dict-data');
@@ -33,7 +35,7 @@ test.describe('TC006 字典数据面板无独立导出导入功能', () => {
     await dictPage.goto();
 
     // Select a dict type row to load dict data in right panel
-    await dictPage.clickTypeRow('sys_oper_type');
+    await dictPage.clickTypeRow(hostBuiltinDictType);
 
     // Assert against the toolbar actions only. The data table also renders
     // row-level delete buttons, so an unscoped role query becomes ambiguous.

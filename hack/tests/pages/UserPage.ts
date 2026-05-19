@@ -12,9 +12,6 @@ import {
 export class UserPage {
   constructor(private page: Page) {}
 
-  /** Role column index within the main user table row. */
-  private static readonly ROLE_COLUMN_INDEX = 5;
-
   /** Drawer submit can settle slowly in full-suite parallel runs. */
   private static readonly DRAWER_HIDDEN_TIMEOUT = 20000;
 
@@ -92,6 +89,18 @@ export class UserPage {
         `.vxe-table--fixed-right-wrapper .vxe-body--row[rowid="${rowID}"]`,
       )
       .first();
+  }
+
+  /** Resolve a main-table column id from its visible header text. */
+  private async getMainColumnId(title: RegExp, label: string) {
+    const header = this.page
+      .locator(".vxe-table--main-wrapper .vxe-header--column:visible")
+      .filter({ hasText: title })
+      .first();
+    await header.waitFor({ state: "visible", timeout: 5000 });
+    const colID = await header.getAttribute("colid");
+    expect(colID, `missing VXE colid for ${label} column`).toBeTruthy();
+    return colID!;
   }
 
   /** Public row locator for assertions after filtering. */
@@ -563,10 +572,9 @@ export class UserPage {
     const row = this.getUserDataRow(username);
     await row.waitFor({ state: "visible", timeout: 10000 });
 
-    // The role cell is stable by visible column order even when VXE duplicates
-    // DOM fragments for fixed columns. Using accessible cells avoids depending
-    // on internal `field` attributes that are not rendered consistently.
-    const roleCell = row.getByRole("cell").nth(UserPage.ROLE_COLUMN_INDEX);
+    const roleColID = await this.getMainColumnId(/角色|Roles/i, "role");
+    const roleCell = row.locator(`td[colid="${roleColID}"] .vxe-cell`).first();
+    await roleCell.waitFor({ state: "visible", timeout: 5000 });
     const roleText = await roleCell.textContent();
     return roleText?.trim() || "";
   }

@@ -34,10 +34,14 @@ function runPlaywright(files, workers, label) {
   const runnableFiles = files.map(playwrightFileArg);
   const args = ['exec', 'playwright', 'test', ...runnableFiles, `--workers=${workers}`, ...extraArgs];
   console.log(`\n[${label}] playwright test ${files.length} file(s), workers=${workers}`);
+  const env = {
+    ...process.env,
+    E2E_HOST_ONLY_PLUGINS: label.startsWith('host') ? '1' : (process.env.E2E_HOST_ONLY_PLUGINS ?? '0'),
+  };
   const result = spawnSync('pnpm', args, {
     cwd: testsDir,
     stdio: 'inherit',
-    env: process.env,
+    env,
   });
   return result.status ?? 1;
 }

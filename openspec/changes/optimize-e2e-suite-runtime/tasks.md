@@ -62,6 +62,7 @@
 - [x] **FB-4**: 根路径 E2E 测试文件、配置、测试数据和 baseline 不得耦合任何具体插件信息，插件相关测试资产必须放在对应插件目录。
 - [x] **FB-5**: E2E 测试文件名前缀不再全局递增，改为按当前模块目录从 `TC001` 开始递增。
 - [x] **FB-6**: `extension:plugin` 分片中动态插件资源“仅本人”数据权限和插件管理动作权限夹具在 plugin-full 环境失败。
+- [x] **FB-7**: GitHub Actions host-only E2E 仍运行部分 plugin-full 或插件依赖用例，导致共享种子和宿主断言失败。
 
 ## Feedback 验证记录
 
@@ -103,3 +104,15 @@
 - FB-6 已通过 `pnpm -C hack/tests exec tsc --noEmit`、`pnpm -C hack/tests test:validate`、`openspec validate optimize-e2e-suite-runtime --strict` 和 `git diff --check`。
 - FB-6 i18n 影响：本次只调整后端数据权限映射、后端单测和 E2E 测试夹具，不新增或修改前端运行时文案、插件 manifest i18n 或 apidoc i18n JSON。
 - FB-6 缓存一致性影响：本次不新增缓存；插件资源查询继续按请求上下文中的数据权限快照即时应用数据库过滤，不改变插件 runtime freshness、启用状态快照或跨实例失效语义。
+- FB-7 已让 `pnpm test:host` 的 Playwright 子进程显式注入 `E2E_HOST_ONLY_PLUGINS=1`，普通 plugin-full 入口仍保留外部传入值或默认 `0`，使测试代码可区分 host-only 与 plugin-full 环境。
+- FB-7 已修复动态插件热升级用例的宿主菜单投影刷新：启用动态插件后通过访问工作台并刷新页面重新加载宿主投影，不再依赖 focus 事件，也不直接改写角色菜单授权表绕过权限缓存。
+- FB-7 已将英文内置治理数据本地化用例按 host-only 环境收敛断言：host-only 下任务日志只断言宿主内置任务，并跳过由源码插件提供的登录日志和操作日志接口断言。
+- FB-7 已将调度任务用例按 host-only 环境区分宿主内置任务集合，host-only 只断言 `任务日志清理` 和 `在线会话清理`，plugin-full 继续覆盖 `服务监控采集`。
+- FB-7 已将字典数据面板用例从插件拥有的 `sys_oper_type` 切换到宿主内置的 `sys_menu_status`，避免 host-only 环境缺少插件字典种子导致失败。
+- FB-7 已修复用户角色 POM 断言：运行时根据可见表头 `角色` / `Roles` 解析 VXE `colid`，再定位同一行对应单元格，避免组织/租户列显示顺序变化或 VXE 运行时列 ID 导致读错列。
+- FB-7 已通过 host-only 文件选择验证：`pnpm -C hack/tests test:host -- --list`，结果选择 `95` 个文件，其中 `17` 个并行、`78` 个串行。
+- FB-7 已通过 host-only 精确回归：`E2E_HOST_ONLY_PLUGINS=1 E2E_BROWSER_CHANNEL=chrome pnpm -C hack/tests exec playwright test e2e/extension/plugin/TC003-plugin-hot-upgrade.ts e2e/i18n/TC005-english-built-in-governance-data-localization.ts e2e/iam/user/TC008-user-role.ts e2e/scheduler/job/TC002-job-handler-crud.ts e2e/settings/dict/TC006-dict-data-export.ts --config playwright.config.ts --project=chromium --workers=1`，结果 `14 passed, 1 skipped (1.6m)`；跳过项为 host-only 环境下由源码插件提供的日志接口断言。
+- FB-7 已通过用户角色单文件回归：`E2E_HOST_ONLY_PLUGINS=1 E2E_BROWSER_CHANNEL=chrome pnpm -C hack/tests exec playwright test e2e/iam/user/TC008-user-role.ts --config playwright.config.ts --project=chromium --workers=1`，结果 `4 passed (37.2s)`。
+- FB-7 已通过 `pnpm -C hack/tests exec tsc --noEmit`、`pnpm -C hack/tests test:validate`、`openspec validate optimize-e2e-suite-runtime --strict` 和 `git diff --check`。
+- FB-7 i18n 影响：本次只调整 E2E 环境分支、断言和跳过逻辑，不新增或修改前端运行时文案、插件 manifest i18n 或 apidoc i18n JSON。
+- FB-7 缓存一致性影响：本次不修改生产缓存逻辑；动态插件用例改为通过 UI 重新加载宿主投影观察实际缓存刷新效果，避免测试侧直接写权限表造成缓存状态与真实运行路径不一致。

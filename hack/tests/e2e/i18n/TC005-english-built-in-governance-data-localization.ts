@@ -12,6 +12,8 @@ import {
 import { waitForRouteReady } from '../../support/ui';
 
 test.describe('TC005 英文环境内置治理数据本地化回归', () => {
+  const hostOnly = process.env.E2E_HOST_ONLY_PLUGINS === '1';
+
   test('TC-1a: 字典管理内置字典类型与数据列表按英文展示', async ({
     adminPage,
     mainLayout,
@@ -136,6 +138,9 @@ test.describe('TC005 英文环境内置治理数据本地化回归', () => {
     await expect(await jobPage.hasJob('任务日志清理')).toBe(false);
 
     await jobLogPage.goto();
+    const expectedJobLogPattern = hostOnly
+      ? /Job Log Cleanup|Online Session Cleanup/
+      : /Job Log Cleanup|Online Session Cleanup|Server Monitor Collection|Server Monitor Cleanup/;
     await expect
       .poll(async () =>
         adminPage
@@ -143,9 +148,7 @@ test.describe('TC005 英文环境内置治理数据本地化回归', () => {
           .first()
           .innerText(),
       )
-      .toMatch(
-        /Job Log Cleanup|Online Session Cleanup|Server Monitor Collection|Server Monitor Cleanup/,
-      );
+      .toMatch(expectedJobLogPattern);
 
     const jobLogText = await adminPage
       .locator('[data-testid="job-log-page"] .vxe-table--body')
@@ -160,6 +163,8 @@ test.describe('TC005 英文环境内置治理数据本地化回归', () => {
     adminPage,
     mainLayout,
   }) => {
+    test.skip(hostOnly, 'Login and operation log APIs are provided by source plugins.');
+
     const api = await createAdminApiContext();
     try {
       const loginLogData = await expectSuccess<{
