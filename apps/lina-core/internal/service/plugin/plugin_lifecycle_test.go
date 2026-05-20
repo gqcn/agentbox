@@ -4,14 +4,19 @@ package plugin
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/gogf/gf/v2/os/gctx"
+
 	"lina-core/internal/dao"
+	"lina-core/internal/model"
 	"lina-core/internal/model/do"
 	configsvc "lina-core/internal/service/config"
+	i18nsvc "lina-core/internal/service/i18n"
 	"lina-core/internal/service/plugin/internal/catalog"
 	"lina-core/internal/service/plugin/internal/frontend"
 	"lina-core/internal/service/plugin/internal/runtime"
@@ -944,6 +949,156 @@ func TestSourceLifecycleBeforeInstallBlocksInstall(t *testing.T) {
 	}
 }
 
+// TestSourceLifecycleBeforeInstallRejectsManualWhenStartupAutoEnableRequired
+// verifies source plugins can use lifecycle input to reject management installs
+// while still allowing startup plugin.autoEnable bootstrap.
+func TestSourceLifecycleBeforeInstallRejectsManualWhenStartupAutoEnableRequired(t *testing.T) {
+	var (
+		service    = newTestService()
+		ctx        = context.Background()
+		pluginID   = "plugin-dev-source-startup-only-install"
+		operations []string
+	)
+
+	testutil.CreateTestPluginDir(t, pluginID)
+	testutil.CleanupPluginGovernanceRowsHard(t, ctx, pluginID)
+	t.Cleanup(func() {
+		configsvc.SetPluginAutoEnableOverride(nil)
+		testutil.CleanupPluginGovernanceRowsHard(t, ctx, pluginID)
+	})
+
+	if _, err := service.SyncAndList(ctx); err != nil {
+		t.Fatalf("expected source plugin discovery to succeed, got error: %v", err)
+	}
+	registerSourceLifecycleCallbacksForTest(
+		t,
+		pluginID,
+		&operations,
+		sourceLifecycleCallbackOptions{requireStartupAutoEnableForInstall: true},
+	)
+
+	_, err := service.Install(ctx, pluginID, InstallOptions{})
+	if !bizerr.Is(err, CodePluginLifecyclePreconditionVetoed) {
+		t.Fatalf("expected manual install to be vetoed, got %v", err)
+	}
+	if len(operations) != 1 || operations[0] != pluginhost.LifecycleHookBeforeInstall.String()+":"+pluginID {
+		t.Fatalf("expected one manual before-install operation, got %#v", operations)
+	}
+
+	configsvc.SetPluginAutoEnableOverride([]string{pluginID})
+	if err = service.BootstrapAutoEnable(ctx); err != nil {
+		t.Fatalf("expected startup auto-enable install to succeed, got error: %v", err)
+	}
+	expected := []string{
+		pluginhost.LifecycleHookBeforeInstall.String() + ":" + pluginID,
+		pluginhost.LifecycleHookBeforeInstall.String() + ":" + pluginID,
+		pluginhost.LifecycleHookAfterInstall.String() + ":" + pluginID,
+	}
+	if !sourceLifecycleTestStringSlicesEqual(operations, expected) {
+		t.Fatalf("expected lifecycle operations %#v, got %#v", expected, operations)
+	}
+	registry, lookupErr := service.getPluginRegistry(ctx, pluginID)
+	if lookupErr != nil {
+		t.Fatalf("expected source plugin registry lookup to succeed, got error: %v", lookupErr)
+	}
+	if registry == nil || registry.Installed != catalog.InstalledYes || registry.Status != catalog.StatusEnabled {
+		t.Fatalf("expected startup auto-enable to install and enable plugin, got %#v", registry)
+	}
+}
+
+// TestSourceLifecyclePreconditionLocalizesReasonParams verifies source-plugin
+// veto reasons are localized before being embedded in the user-facing lifecycle error.
+func TestSourceLifecyclePreconditionLocalizesReasonParams(t *testing.T) {
+	var (
+		service  = newTestService()
+		ctx      = context.Background()
+		pluginID = "plugin-dev-source-localized-before-install"
+	)
+
+	pluginDir := testutil.CreateTestPluginDir(t, pluginID)
+	testutil.WriteTestFile(
+		t,
+		filepath.Join(pluginDir, "manifest", "i18n", i18nsvc.DefaultLocale, "error.json"),
+		fmt.Sprintf(`{"plugin":{"%s":{"BeforeInstall":{"veto":"只能通过配置 plugin.autoEnable 并重启宿主来安装"}}}}`, pluginID),
+	)
+	testutil.WriteTestFile(
+		t,
+		filepath.Join(pluginDir, "manifest", "i18n", i18nsvc.EnglishLocale, "error.json"),
+		fmt.Sprintf(`{"plugin":{"%s":{"BeforeInstall":{"veto":"Install by configuring plugin.autoEnable and restarting the host"}}}}`, pluginID),
+	)
+	testutil.CleanupPluginGovernanceRowsHard(t, ctx, pluginID)
+	t.Cleanup(func() {
+		testutil.CleanupPluginGovernanceRowsHard(t, ctx, pluginID)
+	})
+
+	if _, err := service.SyncAndList(ctx); err != nil {
+		t.Fatalf("expected source plugin discovery to succeed, got error: %v", err)
+	}
+	service.i18nSvc.InvalidateRuntimeBundleCache(i18nsvc.InvalidateScope{
+		SourcePluginID: pluginID,
+		Sectors:        []i18nsvc.Sector{i18nsvc.SectorSourcePlugin},
+	})
+	t.Cleanup(func() {
+		service.i18nSvc.InvalidateRuntimeBundleCache(i18nsvc.InvalidateScope{
+			SourcePluginID: pluginID,
+			Sectors:        []i18nsvc.Sector{i18nsvc.SectorSourcePlugin},
+		})
+	})
+	registerSourceLifecycleCallbacksForTest(
+		t,
+		pluginID,
+		nil,
+		sourceLifecycleCallbackOptions{vetoOperation: pluginhost.LifecycleHookBeforeInstall.String()},
+	)
+
+	localizedCtx := context.WithValue(ctx, gctx.StrKey("BizCtx"), &model.Context{Locale: i18nsvc.DefaultLocale})
+	_, err := service.Install(localizedCtx, pluginID, InstallOptions{})
+	if !bizerr.Is(err, CodePluginLifecyclePreconditionVetoed) {
+		t.Fatalf("expected localized lifecycle precondition bizerr, got %v", err)
+	}
+	messageErr, ok := bizerr.As(err)
+	if !ok {
+		t.Fatalf("expected structured lifecycle error, got %v", err)
+	}
+	expectedReason := "只能通过配置 plugin.autoEnable 并重启宿主来安装"
+	if actual := messageErr.Params()["reasons"]; actual != expectedReason {
+		t.Fatalf("expected localized lifecycle reason %q, got %#v", expectedReason, actual)
+	}
+}
+
+// TestSourceLifecycleBeforeInstallReceivesStartupAutoEnableFlag verifies
+// plugin.autoEnable target installs publish startup context to BeforeInstall.
+func TestSourceLifecycleBeforeInstallReceivesStartupAutoEnableFlag(t *testing.T) {
+	var (
+		service    = newTestService()
+		ctx        = context.Background()
+		pluginID   = "plugin-dev-source-startup-flag"
+		operations []string
+	)
+
+	testutil.CreateTestPluginDir(t, pluginID)
+	configsvc.SetPluginAutoEnableOverride([]string{pluginID})
+	testutil.CleanupPluginGovernanceRowsHard(t, ctx, pluginID)
+	t.Cleanup(func() {
+		configsvc.SetPluginAutoEnableOverride(nil)
+		testutil.CleanupPluginGovernanceRowsHard(t, ctx, pluginID)
+	})
+
+	if _, err := service.SyncAndList(ctx); err != nil {
+		t.Fatalf("expected source plugin discovery to succeed, got error: %v", err)
+	}
+	registerSourceLifecycleCallbacksForTest(
+		t,
+		pluginID,
+		&operations,
+		sourceLifecycleCallbackOptions{expectBeforeInstallStartupAutoEnable: boolPtr(true)},
+	)
+
+	if err := service.BootstrapAutoEnable(ctx); err != nil {
+		t.Fatalf("expected startup auto-enable install to succeed, got error: %v", err)
+	}
+}
+
 // TestSourceLifecycleBeforeDisableBlocksDisable verifies source-plugin facade
 // BeforeDisable callbacks run before the source registry status changes.
 func TestSourceLifecycleBeforeDisableBlocksDisable(t *testing.T) {
@@ -1157,10 +1312,12 @@ func TestSourceLifecycleBeforeUninstallReceivesPurgePolicy(t *testing.T) {
 
 // sourceLifecycleCallbackOptions configures a source-plugin lifecycle test facade.
 type sourceLifecycleCallbackOptions struct {
-	vetoOperation       string
-	expectBeforePurge   *bool
-	expectAfterPurge    *bool
-	allowedPurgeStorage *bool
+	vetoOperation                        string
+	expectBeforePurge                    *bool
+	expectAfterPurge                     *bool
+	expectBeforeInstallStartupAutoEnable *bool
+	allowedPurgeStorage                  *bool
+	requireStartupAutoEnableForInstall   bool
 }
 
 // TestSourceLifecycleAfterInstallRunsAfterInstall verifies source-plugin
@@ -1243,7 +1400,9 @@ func registerSourceLifecycleCallbacksForTest(
 			t.Fatalf("expected lifecycle input to be published")
 		}
 		operation := strings.TrimSpace(input.Operation())
-		*operations = append(*operations, operation+":"+input.PluginID())
+		if operations != nil {
+			*operations = append(*operations, operation+":"+input.PluginID())
+		}
 		if input.PluginID() != pluginID {
 			t.Fatalf("expected plugin id %s, got %s", pluginID, input.PluginID())
 		}
@@ -1251,6 +1410,20 @@ func registerSourceLifecycleCallbacksForTest(
 			if input.PurgeStorageData() != *options.expectBeforePurge {
 				t.Fatalf("expected before-uninstall purgeStorageData=%v, got %v", *options.expectBeforePurge, input.PurgeStorageData())
 			}
+		}
+		if operation == pluginhost.LifecycleHookBeforeInstall.String() &&
+			options.expectBeforeInstallStartupAutoEnable != nil &&
+			input.StartupAutoEnable() != *options.expectBeforeInstallStartupAutoEnable {
+			t.Fatalf(
+				"expected before-install startupAutoEnable=%v, got %v",
+				*options.expectBeforeInstallStartupAutoEnable,
+				input.StartupAutoEnable(),
+			)
+		}
+		if operation == pluginhost.LifecycleHookBeforeInstall.String() &&
+			options.requireStartupAutoEnableForInstall &&
+			!input.StartupAutoEnable() {
+			return false, "plugin." + pluginID + ".startup_auto_enable_required", nil
 		}
 		if operation == pluginhost.LifecycleHookBeforeUninstall.String() &&
 			options.allowedPurgeStorage != nil &&
@@ -1307,6 +1480,11 @@ func registerSourceLifecycleCallbacksForTest(
 		t.Fatalf("failed to replace source plugin fixture %s: %v", pluginID, err)
 	}
 	t.Cleanup(cleanup)
+}
+
+// boolPtr returns a pointer to value for concise lifecycle test expectations.
+func boolPtr(value bool) *bool {
+	return &value
 }
 
 // sourceLifecycleTestStringSlicesEqual reports whether two ordered string slices are equal.
