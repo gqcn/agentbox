@@ -476,8 +476,10 @@ async function handleStatusChange(row: SystemPlugin, checked: boolean) {
     }
   }
   const previousEnabled = row.enabled;
-  row.enabled = checked ? 1 : 0;
+  const nextEnabled = checked ? 1 : 0;
+
   setPluginStatusChanging(row.id, true);
+  row.enabled = nextEnabled;
   try {
     await (checked ? pluginEnable : pluginDisable)(row.id);
     await notifyPluginRegistryChanged();
@@ -488,6 +490,7 @@ async function handleStatusChange(row: SystemPlugin, checked: boolean) {
     );
   } catch {
     row.enabled = previousEnabled;
+    await gridApi.query();
   } finally {
     setPluginStatusChanging(row.id, false);
   }

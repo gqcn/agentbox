@@ -1,0 +1,192 @@
+# Run deterministic OpenSpec archiving for completed active changes.
+# Scans active changes and applies openspec archive directly before optional AI consolidation.
+# 执行确定性的 OpenSpec 已完成变更归档。
+# 扫描活跃变更，并在可选 AI 聚合前直接调用 openspec archive。
+name: Monthly OpenSpec Auto Archive
+description: Deterministically archive completed active OpenSpec changes with the pinned CLI version.
+
+# openspec-version: pinned CLI version for reproducible archive behavior.
+# openspec-version: 固定 CLI 版本以保证归档行为可重现。
+inputs:
+  openspec-version:
+    description: OpenSpec CLI version to run.
+    required: true
+
+outputs:
+  archived-count:
+    description: Number of completed active changes archived successfully.
+    value: ${{ steps.auto-archive.outputs.archived-count }}
+  failed-count:
+    description: Number of completed active changes that failed to archive.
+    value: ${{ steps.auto-archive.outputs.failed-count }}
+  had-failures:
+    description: Whether any completed active change failed to archive.
+    value: ${{ steps.auto-archive.outputs.had-failures }}
+  failed-json:
+    description: JSON array of failed archive candidates.
+    value: ${{ steps.auto-archive.outputs.failed-json }}
+
+runs:
+  using: composite
+  steps:
+    # Query completed active changes and archive each candidate directly with OpenSpec.
+    # 查询已完成活跃变更，并直接使用 OpenSpec 逐个归档候选项。
+    - name: Archive Completed Active Changes
+      id: auto-archive
+      shell: bash
+      env:
+        OPENSPEC_VERSION: ${{ inputs.openspec-version }}
+      run: |
+        set -euo pipefail
+
+        node <<'NODE'
+        const childProcess = require('node:child_process');
+        const fs = require('node:fs');
+
+        const openspecVersion = process.env.OPENSPEC_VERSION || '1.3.1';
+        const completedStatuses = new Set(['complete', 'completed', 'done']);
+
+        function writeOutput(name, value) {
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `${name}<<EOF\n${value}\nEOF\n`);
+        }
+
+        function appendSummary(lines) {
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
+        }
+
+        function runOpenSpec(args, options = {}) {
+          return childProcess.spawnSync(
+            'npx',
+            ['-y', `@fission-ai/openspec@${openspecVersion}`, ...args],
+            {
+              encoding: 'utf8',
+              env: {
+                ...process.env,
+                NO_COLOR: '1',
+              },
+              ...options,
+            },
+          );
+        }
+
+        function listActiveChanges() {
+          const result = runOpenSpec(['list', '--json']);
+          if (result.status !== 0) {
+            return {
+              error: result,
+              changes: [],
+            };
+          }
+          const payload = JSON.parse(result.stdout || '{"changes":[]}');
+          return {
+            error: null,
+            changes: Array.isArray(payload.changes) ? payload.changes : [],
+          };
+        }
+
+        const initialList = listActiveChanges();
+        if (initialList.error) {
+          process.stdout.write(initialList.error.stdout || '');
+          process.stderr.write(initialList.error.stderr || '');
+          process.exit(initialList.error.status || 1);
+        }
+
+        const changes = initialList.changes;
+        const candidates = changes
+          .filter((change) => completedStatuses.has(String(change.status || '').toLowerCase()))
+          .sort((left, right) => String(left.name || '').localeCompare(String(right.name || '')));
+
+        if (candidates.length === 0) {
+          console.log('No completed active OpenSpec changes to archive.');
+          appendSummary(['No completed active OpenSpec changes to archive.']);
+          writeOutput('archived-count', '0');
+          writeOutput('failed-count', '0');
+          writeOutput('had-failures', 'false');
+          writeOutput('failed-json', '[]');
+          process.exit(0);
+        }
+
+        const archived = [];
+        const failed = [];
+
+        for (const change of candidates) {
+          const name = String(change.name || '').trim();
+          if (!name) {
+            continue;
+          }
+
+          const hasTaskCounts = Number.isInteger(change.completedTasks) && Number.isInteger(change.totalTasks);
+          if (hasTaskCounts && change.completedTasks !== change.totalTasks) {
+            console.log(`Skipping ${name}: task count is incomplete (${change.completedTasks}/${change.totalTasks}).`);
+            failed.push({
+              name,
+              status: change.status,
+              completedTasks: change.completedTasks,
+              totalTasks: change.totalTasks,
+              exitCode: null,
+              summary: `OpenSpec reported status=${change.status} but tasks=${change.completedTasks}/${change.totalTasks}.`,
+            });
+            continue;
+          }
+
+          console.log(`\n::group::Archive ${name}`);
+          const archiveResult = runOpenSpec(['archive', '-y', name]);
+          process.stdout.write(archiveResult.stdout || '');
+          process.stderr.write(archiveResult.stderr || '');
+          console.log('::endgroup::');
+
+          const afterArchive = listActiveChanges();
+          const stillActive = afterArchive.error
+            ? true
+            : afterArchive.changes.some((activeChange) => String(activeChange.name || '') === name);
+
+          if (archiveResult.status === 0 && !stillActive) {
+            archived.push(name);
+            continue;
+          }
+
+          const output = `${archiveResult.stdout || ''}\n${archiveResult.stderr || ''}`.trim();
+          const listError = afterArchive.error
+            ? `\nPost-archive status check failed:\n${afterArchive.error.stdout || ''}\n${afterArchive.error.stderr || ''}`
+            : '';
+          const activeError = stillActive ? `\nChange remained active after archive command: ${name}` : '';
+          const summary = `${output}${listError}${activeError}`.split(/\r?\n/).filter(Boolean).slice(-10).join('\n');
+          failed.push({
+            name,
+            status: change.status,
+            completedTasks: change.completedTasks,
+            totalTasks: change.totalTasks,
+            exitCode: archiveResult.status,
+            summary,
+          });
+        }
+
+        const summaryLines = [
+          `Deterministic OpenSpec archive processed ${candidates.length} completed active change(s).`,
+          `Archived successfully: ${archived.length}`,
+          `Failed to archive: ${failed.length}`,
+        ];
+
+        if (archived.length > 0) {
+          summaryLines.push('', 'Archived changes:', ...archived.map((name) => `- ${name}`));
+        }
+
+        if (failed.length > 0) {
+          summaryLines.push(
+            '',
+            'Archive failures:',
+            ...failed.map((item) => {
+              const completed = Number.isInteger(item.completedTasks) ? item.completedTasks : 'unknown';
+              const total = Number.isInteger(item.totalTasks) ? item.totalTasks : 'unknown';
+              return `- ${item.name}: status=${item.status}, tasks=${completed}/${total}, exit=${item.exitCode}`;
+            }),
+          );
+        }
+
+        appendSummary(summaryLines);
+        writeOutput('archived-count', String(archived.length));
+        writeOutput('failed-count', String(failed.length));
+        writeOutput('had-failures', failed.length > 0 ? 'true' : 'false');
+        writeOutput('failed-json', JSON.stringify(failed));
+        process.exit(0);
+        NODE

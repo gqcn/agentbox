@@ -67,6 +67,7 @@
 - [x] **FB-9**: 完整 E2E 中角色新增/编辑抽屉会在异步初始化完成后覆盖已填写字段，导致提交未发出角色保存请求。
 - [x] **FB-10**: Nightly plugin-full `plugins` scope 仍在单个 CI job 中串行执行全部源码插件自有 E2E，导致最长分片接近 1 小时。
 - [x] **FB-11**: GitHub Actions `plugins-1-of-5` 分片中动态插件禁用后侧边栏菜单隐藏断言存在菜单投影刷新竞态。
+- [x] **FB-12**: 动态插件 runtime 缓存失效和 reconciler 通知 reason 存在字符串硬编码。
 
 ## Feedback 验证记录
 
@@ -152,3 +153,11 @@
 - FB-11 i18n 影响：本次只调整 E2E 等待与断言顺序，不新增或修改前端运行时文案、插件 manifest i18n 或 apidoc i18n JSON。
 - FB-11 缓存一致性影响：本次不修改生产缓存逻辑；E2E 通过后端 `menus/all` 轮询确认插件禁用后的菜单投影失效已完成，再刷新当前页面观察真实侧栏结果。
 - Review(FB-11): 已完成 `lina-review` 审查。审查范围来源：`git status --short --ignore-submodules=none`、`git -C apps/lina-plugins status --short --untracked-files=all`、`openspec status --change optimize-e2e-suite-runtime --json`、`git diff -- openspec/changes/optimize-e2e-suite-runtime/tasks.md` 和 `git -C apps/lina-plugins diff -- linapro-demo-dynamic/hack/tests/e2e/runtime/TC001-runtime-wasm-lifecycle.ts`。确认本次只调整动态插件 E2E 对菜单投影刷新的等待与 OpenSpec 反馈记录；未修改生产 Go/前端代码、业务 API、数据库 schema、运行时缓存逻辑、数据权限逻辑或 i18n 资源。严重问题 0；警告 0。
+- FB-12 已新增 runtime 包内 `runtimeChangeReason` 命名类型与集中常量，覆盖动态插件安装、升级、启停、刷新、卸载、孤儿卸载、上传、缺失 artifact、期望状态变更和 reconciler 后台扫描原因。
+- FB-12 已将 `invalidateRuntimeCaches`、`notifyRuntimeCacheChanged`、`notifyReconcilerChanged` 与 `publishReconcilerChanged` 改为接收 `runtimeChangeReason`，仅在调用现有 frontend bundle invalidator、root cache notifier 和日志输出边界时转换为字符串，保持外部持久化 reason 值不变。
+- FB-12 已通过静态扫描 `rg -n '"plugin_uninstalled"|... apps/lina-core/internal/service/plugin/internal/runtime -g '*.go'`，确认动态插件 runtime reason 字符串只保留在 `runtime_change_reason.go` 集中常量定义中。
+- FB-12 已通过后端变更包测试：`cd apps/lina-core && go test ./internal/service/plugin/internal/runtime -count=1`，结果 `ok lina-core/internal/service/plugin/internal/runtime 11.094s`。
+- FB-12 已通过治理验证：`openspec validate optimize-e2e-suite-runtime --strict`、`git diff --check -- apps/lina-core/internal/service/plugin/internal/runtime/... openspec/changes/optimize-e2e-suite-runtime/tasks.md`。
+- FB-12 i18n 影响：本次只调整后端内部 runtime reason 的类型定义和调用点，不新增或修改用户可见文案、前端运行时语言包、插件 manifest i18n 或 apidoc i18n JSON。
+- FB-12 缓存一致性影响：本次不改变缓存权威数据源、一致性模型、失效 scope、跨实例通知机制或 reason 字符串值；缓存失效仍通过现有 frontend bundle invalidator、runtime bundle scope invalidation、root cache notifier 和 reconciler revision controller 执行。
+- Review(FB-12): 已完成 `lina-review` 审查。审查范围来源：`git status --short --ignore-submodules=none`、`git ls-files --others --exclude-standard apps/lina-core/internal/service/plugin/internal/runtime openspec/changes/optimize-e2e-suite-runtime`、`openspec status --change optimize-e2e-suite-runtime --json`、`git diff HEAD -- apps/lina-core/internal/service/plugin/internal/runtime/... openspec/changes/optimize-e2e-suite-runtime/tasks.md`。确认本次只将动态插件 runtime reason 收敛为包内命名类型常量，并在现有字符串边界显式转换；未修改 API、数据库 schema、用户可见文案、数据权限、缓存失效 scope 或跨实例通知语义。后端 Go 编译门禁已由 `cd apps/lina-core && go test ./internal/service/plugin/internal/runtime -count=1` 覆盖。严重问题 0；警告 0。

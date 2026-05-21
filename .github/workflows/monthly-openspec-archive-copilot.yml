@@ -70,9 +70,32 @@ jobs:
       - name: Prepare Shared Runtime
         uses: ./.github/actions/monthly-openspec-setup
 
-      # Install and configure GitHub Copilot CLI for unattended prompt execution.
-      # 安装并配置 GitHub Copilot CLI，用于无人值守提示词执行。
+      # Archive completed active changes deterministically before optional AI consolidation.
+      # 在可选 AI 聚合前确定性归档已完成的活跃变更。
+      - name: Run Deterministic OpenSpec Auto Archive
+        id: auto-archive
+        uses: ./.github/actions/monthly-openspec-auto-archive
+        with:
+          openspec-version: ${{ env.OPENSPEC_VERSION }}
+
+      # Detect whether deterministic auto-archive changed repository files.
+      # 检测确定性自动归档是否修改了仓库文件。
+      - name: Detect Archive Changes
+        id: archive-diff
+        uses: ./.github/actions/monthly-openspec-detect-changes
+
+      # Validate immediately after deterministic auto-archive so invalid archive results do not enter consolidation.
+      # 确定性自动归档后立即校验，避免无效归档结果继续进入聚合阶段。
+      - name: Validate OpenSpec After Auto Archive
+        if: ${{ steps.archive-diff.outputs.changed == 'true' }}
+        uses: ./.github/actions/monthly-openspec-validate
+        with:
+          openspec-version: ${{ env.OPENSPEC_VERSION }}
+
+      # Install and configure GitHub Copilot CLI for unattended consolidation prompt execution.
+      # 安装并配置 GitHub Copilot CLI，用于无人值守聚合提示词执行。
       - name: Prepare GitHub Copilot CLI Runtime
+        if: ${{ steps.archive-diff.outputs.changed == 'true' }}
         env:
           COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
         run: |
@@ -119,61 +142,6 @@ jobs:
             echo "COPILOT_SELECTED_REASONING_EFFORT=${copilot_reasoning_effort}"
           } >> "${GITHUB_ENV}"
           echo "${copilot_bin}" >> "${GITHUB_PATH}"
-
-      # Run the lina-auto-archive prompt through GitHub Copilot CLI.
-      # 通过 GitHub Copilot CLI 运行 lina-auto-archive 提示词。
-      - name: Run Lina Auto Archive
-        env:
-          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-
-          prompt="$(cat .github/prompts/monthly-openspec-auto-archive.zh-CN.md)"
-          mapfile -t copilot_model_args < <(
-            node -e 'const value = process.env.COPILOT_SELECTED_MODEL || ""; if (value && value !== "auto") console.log("--model=" + value);'
-          )
-          mapfile -t copilot_reasoning_args < <(
-            node -e 'const value = process.env.COPILOT_SELECTED_REASONING_EFFORT || ""; if (value) console.log("--reasoning-effort=" + value);'
-          )
-          copilot \
-            "${copilot_model_args[@]}" \
-            "${copilot_reasoning_args[@]}" \
-            --silent \
-            --log-dir="${COPILOT_LOGS}" \
-            --no-ask-user \
-            --secret-env-vars COPILOT_GITHUB_TOKEN \
-            --allow-tool 'shell(pwd)' \
-            --allow-tool 'shell(test:*)' \
-            --allow-tool 'shell(find:*)' \
-            --allow-tool 'shell(ls:*)' \
-            --allow-tool 'shell(rg:*)' \
-            --allow-tool 'shell(cat:*)' \
-            --allow-tool 'shell(sed:*)' \
-            --allow-tool 'shell(openspec:*)' \
-            --allow-tool 'shell(npx:*)' \
-            --allow-tool 'shell(git:*)' \
-            --allow-tool write \
-            -p "${prompt}" 2>&1 | tee "${COPILOT_LOGS}/auto-archive.console.log"
-
-      # Fail fast when the auto-archive phase reports success but leaves completed changes active.
-      # 当自动归档阶段报告成功但仍遗留已完成活跃变更时快速失败。
-      - name: Assert Auto Archive Completed
-        uses: ./.github/actions/monthly-openspec-assert-archive-complete
-        with:
-          openspec-version: ${{ env.OPENSPEC_VERSION }}
-
-      # Validate immediately after auto-archive so invalid archive results do not enter consolidation.
-      # 自动归档后立即校验，避免无效归档结果继续进入聚合阶段。
-      - name: Validate OpenSpec After Auto Archive
-        uses: ./.github/actions/monthly-openspec-validate
-        with:
-          openspec-version: ${{ env.OPENSPEC_VERSION }}
-
-      # Detect whether auto-archive changed repository files.
-      # 检测自动归档是否修改了仓库文件。
-      - name: Detect Archive Changes
-        id: archive-diff
-        uses: ./.github/actions/monthly-openspec-detect-changes
 
       # Consolidate archive records only when the auto-archive phase produced changes.
       # 仅在自动归档阶段产生变更时聚合归档记录。
@@ -228,11 +196,19 @@ jobs:
           openspec-version: ${{ env.OPENSPEC_VERSION }}
           base-branch: ${{ github.event.repository.default_branch }}
 
+      # Fail after PR finalization when deterministic archive left completed candidates behind.
+      # 当确定性归档仍遗留已完成候选时，在 PR 收尾后失败。
+      - name: Assert Auto Archive Completed
+        if: ${{ steps.auto-archive.outputs.had-failures == 'true' }}
+        uses: ./.github/actions/monthly-openspec-assert-archive-complete
+        with:
+          openspec-version: ${{ env.OPENSPEC_VERSION }}
+
       # Upload GitHub Copilot CLI task logs for review and failure diagnosis.
       # 上传 GitHub Copilot CLI 任务日志，便于审查和失败诊断。
       - name: Upload GitHub Copilot CLI Logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: monthly-openspec-copilot-logs
           path: ${{ runner.temp }}/copilot-logs/

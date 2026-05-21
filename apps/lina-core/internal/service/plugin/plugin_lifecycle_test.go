@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/os/gctx"
 
 	"lina-core/internal/dao"
@@ -73,6 +74,86 @@ func TestUpdateStatusEnablesBackendOnlyDynamicPluginWithoutFrontendAssets(t *tes
 	if !service.IsEnabled(ctx, pluginID) {
 		t.Fatalf("expected backend-only dynamic plugin to be enabled after status update")
 	}
+}
+
+// TestUpdateStatusPreservesDynamicPluginStorage verifies that enable-disable
+// status transitions do not replay uninstall SQL or remove plugin-owned data.
+func TestUpdateStatusPreservesDynamicPluginStorage(t *testing.T) {
+	var (
+		service   = newTestService()
+		ctx       = context.Background()
+		pluginID  = "plugin-dev-dynamic-status-toggle-storage"
+		tableName = "plugin_dev_dynamic_status_toggle_storage"
+	)
+
+	dropDynamicStatusToggleTable(t, ctx, tableName)
+	testutil.CleanupPluginGovernanceRowsHard(t, ctx, pluginID)
+	t.Cleanup(func() {
+		dropDynamicStatusToggleTable(t, ctx, tableName)
+		testutil.CleanupPluginGovernanceRowsHard(t, ctx, pluginID)
+	})
+
+	testutil.CreateTestRuntimeStorageArtifact(
+		t,
+		pluginID,
+		"Dynamic Status Toggle Storage Plugin",
+		"v0.4.9",
+		[]*catalog.ArtifactSQLAsset{
+			{
+				Key: "001-status-toggle-storage.sql",
+				Content: strings.Join([]string{
+					"CREATE TABLE IF NOT EXISTS " + tableName + " (id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, marker VARCHAR(32) NOT NULL);",
+					"INSERT INTO " + tableName + " (marker) VALUES ('installed');",
+				}, "\n"),
+			},
+		},
+		[]*catalog.ArtifactSQLAsset{
+			{
+				Key:     "001-status-toggle-storage-drop.sql",
+				Content: "DROP TABLE IF EXISTS " + tableName + ";",
+			},
+		},
+	)
+
+	if _, err := service.Install(ctx, pluginID, InstallOptions{}); err != nil {
+		t.Fatalf("expected dynamic plugin install to succeed, got error: %v", err)
+	}
+	if count := dynamicStatusToggleTableRowCount(t, ctx, tableName); count != 1 {
+		t.Fatalf("expected install SQL to create one marker row, got %d", count)
+	}
+
+	if err := service.UpdateStatus(ctx, pluginID, catalog.StatusEnabled, nil); err != nil {
+		t.Fatalf("expected dynamic plugin enable to succeed, got error: %v", err)
+	}
+	if err := service.UpdateStatus(ctx, pluginID, catalog.StatusDisabled, nil); err != nil {
+		t.Fatalf("expected dynamic plugin disable to succeed, got error: %v", err)
+	}
+	if err := service.UpdateStatus(ctx, pluginID, catalog.StatusEnabled, nil); err != nil {
+		t.Fatalf("expected dynamic plugin re-enable to succeed, got error: %v", err)
+	}
+	if count := dynamicStatusToggleTableRowCount(t, ctx, tableName); count != 1 {
+		t.Fatalf("expected status toggles to preserve plugin table row, got %d", count)
+	}
+}
+
+// dropDynamicStatusToggleTable removes the temporary table used by the dynamic
+// status toggle regression test so repeated runs start from a clean state.
+func dropDynamicStatusToggleTable(t *testing.T, ctx context.Context, tableName string) {
+	t.Helper()
+	if _, err := g.DB().Exec(ctx, "DROP TABLE IF EXISTS "+tableName+";"); err != nil {
+		t.Fatalf("expected dynamic status toggle table cleanup to succeed, got error: %v", err)
+	}
+}
+
+// dynamicStatusToggleTableRowCount returns the number of marker rows in the
+// dynamic status toggle test table and fails if the table has been dropped.
+func dynamicStatusToggleTableRowCount(t *testing.T, ctx context.Context, tableName string) int {
+	t.Helper()
+	value, err := g.DB().GetValue(ctx, "SELECT COUNT(1) FROM "+tableName+";")
+	if err != nil {
+		t.Fatalf("expected dynamic status toggle table row count query to succeed, got error: %v", err)
+	}
+	return value.Int()
 }
 
 // TestApplyInstallModeSelectionRejectsInvalidMode verifies service-layer install
