@@ -76,6 +76,7 @@
 - [x] **FB-18**: 修复管理后台 LinaPro logo 在配置后的工作台入口下无法展示的问题。
 - [x] **FB-19**: 修复管理后台接口文档页面在配置后的工作台入口下打开为空白页面的问题。
 - [x] **FB-20**: 修复语言切换后顶部面包屑导航未按当前语言环境重新本地化的问题。
+- [x] **FB-21**: 修复 `TestProductionPanicsMatchAllowlist` 中 `linapro-ops-demo-guard` 源码插件注册失败退出 allowlist 计数滞后的单元测试失败。
 
 ## Verification Notes
 
@@ -94,3 +95,5 @@
 - FB-18/FB-19 `/lina-review`：审查范围为前端公共配置资源路径解析、接口文档 iframe、Stoplight 静态 HTML、Vite 开发态 Stoplight HTML bypass、工作台卡片图标、相关 E2E/单元测试和本任务记录；未发现阻塞问题。实现未修改 Go 生产代码、REST API、数据库 schema、后端数据权限、运行时缓存、manifest i18n、apidoc i18n 或长期维护开发脚本；Go 编译门禁已通过 `cd apps/lina-core && go test ./internal/cmd -count=1` 覆盖本次 Go 测试变更和路由绑定回归。
 - FB-20 为前端共享布局 i18n 行为修复，面包屑标题现在显式依赖当前 `vue-i18n` locale，并优先使用后端菜单路由提供的 `meta.i18nKey` 重新本地化，避免语言切换后继续显示旧语言的 `meta.title` 缓存值。已新增 `hack/tests/e2e/i18n/TC015-breadcrumb-language-switch.ts` 覆盖中文、英文、中文三段切换；不新增或修改翻译资源、REST API、后端数据操作接口、业务缓存、开发工具或脚本，数据权限与缓存资源无需变更。已验证：`E2E_BROWSER_CHANNEL=chrome pnpm -C hack/tests exec playwright test e2e/i18n/TC015-breadcrumb-language-switch.ts --config playwright.config.ts --project=chromium --workers=1`、`pnpm -C apps/lina-vben -F @lina/web-antd typecheck`、`openspec validate decouple-workspace-plugin-routes --strict`、`git diff --check -- apps/lina-vben/packages/effects/layouts/src/widgets/breadcrumb.vue hack/tests/pages/MainLayout.ts hack/tests/e2e/i18n/TC015-breadcrumb-language-switch.ts openspec/changes/decouple-workspace-plugin-routes/tasks.md`。`pnpm -C hack/tests test:validate` 当前仍受既有源码插件四位 TC 文件名阻断；`pnpm -C hack/tests exec tsc -p tsconfig.json --noEmit --pretty false` 当前仍受既有 `@host-tests/pages/MultiTenantPage` 缺失阻断，均非本次新增测试引入。
 - FB-20 `/lina-review`：审查范围为共享面包屑组件、宿主 MainLayout E2E POM、新增 i18n 面包屑语言切换用例和本任务记录；未发现阻塞问题。实现优先使用 `meta.i18nKey` 且在缺少翻译键时回退到 `title/name`，与菜单和标签页的本地化容错一致。变更不涉及 Go 生产代码、REST API、数据库 schema、后端数据权限、运行时缓存、manifest i18n、apidoc i18n 或开发工具脚本；Go 编译门禁不适用。
+- FB-21 为后端 panic 治理测试基线修复；`linapro-ops-demo-guard` 源码插件 `init` 现在包含 `BeforeInstall`、HTTP route callback 和 source plugin registration 三个静态注册失败退出点，均位于顶层源码插件静态注册入口并显式处理 error 后 fail-fast。该修复只同步 `TestProductionPanicsMatchAllowlist` allowlist 计数，不新增运行时行为、用户可见文案、REST API、数据操作接口、业务缓存、i18n 资源、开发工具或脚本，数据权限、缓存一致性和 E2E 均不适用。已验证：`cd apps/lina-core && go test ./internal/cmd -run TestProductionPanicsMatchAllowlist -count=1`、`cd apps/lina-core && go test ./internal/cmd -count=1`、`openspec validate decouple-workspace-plugin-routes --strict`、`git diff --check -- apps/lina-core/internal/cmd/cmd_panic_allowlist_test.go openspec/changes/decouple-workspace-plugin-routes/tasks.md`。
+- FB-21 `/lina-review`：审查范围为 `apps/lina-core/internal/cmd/cmd_panic_allowlist_test.go` 和本任务记录；未发现阻塞问题。确认新增计数对应既有 `plugin-registration` 允许类别，保留原因仍准确描述源码插件顶层静态注册入口在错误返回后选择中止启动；未修改生产 Go 代码。
