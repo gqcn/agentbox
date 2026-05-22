@@ -549,7 +549,7 @@ func TestEnsurePackedPublicPlaceholderCreatesGitkeep(t *testing.T) {
 	}
 }
 
-func TestRunWasmResolvesExplicitRelativeOutputFromCurrentDirectory(t *testing.T) {
+func TestRunWasmResolvesExplicitRelativeOutputFromRepositoryRoot(t *testing.T) {
 	root := t.TempDir()
 	pluginRoot := filepath.Join(root, "apps", "lina-plugins")
 	writeFile(t, filepath.Join(root, "go.work"), "go 1.25.0\n")
@@ -577,17 +577,21 @@ func TestRunWasmResolvesExplicitRelativeOutputFromCurrentDirectory(t *testing.T)
 
 	if err = runWasm(context.Background(), application, commandInput{
 		Params: map[string]string{
-			"out": "../../temp/output",
+			"out": "temp/output",
 			"p":   "linapro-demo-dynamic",
 		},
 	}); err != nil {
 		t.Fatalf("runWasm returned error: %v", err)
 	}
 
-	expected := filepath.Clean(filepath.Join(workDir, "../../temp/output"))
+	expected := filepath.Join(root, "temp", "output")
 	artifactPath := filepath.Join(expected, "linapro-demo-dynamic.wasm")
 	if !fileutil.FileExists(artifactPath) {
 		t.Fatalf("expected wasm artifact at %s", artifactPath)
+	}
+	workspaceArtifactPath := filepath.Join(workDir, "temp", "output", "linapro-demo-dynamic.wasm")
+	if fileutil.FileExists(workspaceArtifactPath) {
+		t.Fatalf("wasm artifact should not be written under plugin workspace: %s", workspaceArtifactPath)
 	}
 }
 

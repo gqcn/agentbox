@@ -367,6 +367,10 @@ func TestFrontendAssetFallbackIsScopedToWorkspaceBasePath(t *testing.T) {
 	server.SetDumpRouterMap(false)
 
 	runtime := newRouteBindingTestRuntime(ctx)
+	server.BindHandler("/*", func(r *ghttp.Request) {
+		r.Response.WriteStatus(http.StatusNotFound)
+		r.ExitAll()
+	})
 	if err := bindFrontendAssetRoutes(ctx, server, runtime.pluginSvc, "/admin"); err != nil {
 		t.Fatalf("bind frontend asset routes: %v", err)
 	}
@@ -411,6 +415,55 @@ func TestFrontendAssetFallbackIsScopedToWorkspaceBasePath(t *testing.T) {
 	}()
 	if rootResp.StatusCode != http.StatusNotFound {
 		t.Fatalf("expected root path to avoid SPA fallback with 404, got %d", rootResp.StatusCode)
+	}
+}
+
+// TestFrontendAssetFallbackClaimsHostedPluginAssetNamespace verifies the final
+// asset handler owns the hosted plugin asset namespace even when a broader root
+// wildcard route has already been registered.
+func TestFrontendAssetFallbackClaimsHostedPluginAssetNamespace(t *testing.T) {
+	ctx := context.Background()
+	server := ghttp.GetServer("cmd-http-plugin-asset-fallback-" + guid.S())
+	server.SetPort(0)
+	server.SetDumpRouterMap(false)
+
+	runtime := newRouteBindingTestRuntime(ctx)
+	server.BindHandler("/*", func(r *ghttp.Request) {
+		r.Response.WriteStatus(http.StatusConflict)
+		r.Response.Write("root wildcard")
+		r.ExitAll()
+	})
+	if err := bindFrontendAssetRoutes(ctx, server, runtime.pluginSvc, "/admin"); err != nil {
+		t.Fatalf("bind frontend asset routes: %v", err)
+	}
+
+	if err := server.Start(); err != nil {
+		t.Fatalf("start plugin asset fallback test server: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := server.Shutdown(); err != nil {
+			t.Fatalf("shutdown plugin asset fallback test server: %v", err)
+		}
+	})
+
+	response, err := http.Get(fmt.Sprintf(
+		"http://127.0.0.1:%d/x-assets/plugin-missing/v0.1.0/app.js",
+		server.GetListenedPort(),
+	))
+	if err != nil {
+		t.Fatalf("request hosted plugin asset path: %v", err)
+	}
+	defer func() {
+		if closeErr := response.Body.Close(); closeErr != nil {
+			t.Fatalf("close hosted plugin asset response body: %v", closeErr)
+		}
+	}()
+	if response.StatusCode != http.StatusNotFound {
+		body, readErr := io.ReadAll(response.Body)
+		if readErr != nil {
+			t.Fatalf("read hosted plugin asset response body: %v", readErr)
+		}
+		t.Fatalf("expected hosted plugin asset handler 404, got status=%d body=%q", response.StatusCode, string(body))
 	}
 }
 

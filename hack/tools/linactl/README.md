@@ -60,7 +60,7 @@ In PowerShell, run it with an explicit current-directory prefix:
 | `print-version` | `print-version=1` | Prints the validated `framework.version` for release automation. |
 | `p` | `p=linapro-tenant-core` | Selects one plugin for Wasm build or plugin workspace management commands. |
 | `plugin-dir` | `plugin_dir=/path/to/plugin` | Builds one dynamic plugin artifact from an explicit source directory. |
-| `out` | `out=temp/output` | Selects the dynamic plugin artifact output directory. |
+| `out` | `out=temp/output` | Selects the dynamic plugin artifact output directory. Relative paths resolve from the repository root. |
 | `source` | `source=official` | Selects one configured plugin source for plugin workspace management commands. |
 | `force` | `force=1` | Allows plugin install/update commands to overwrite existing or dirty plugin directories. |
 | `verbose` | `verbose=1` | Shows child command output for build tasks. |

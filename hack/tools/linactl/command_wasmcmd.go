@@ -23,11 +23,7 @@ func runWasm(ctx context.Context, a *app, input commandInput) error {
 		outDir = filepath.Join(a.root, "temp", "output")
 	}
 	if !filepath.IsAbs(outDir) {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("resolve current directory for wasm output: %w", err)
-		}
-		outDir = filepath.Join(cwd, outDir)
+		outDir = filepath.Join(a.root, outDir)
 	}
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return fmt.Errorf("create wasm output directory: %w", err)

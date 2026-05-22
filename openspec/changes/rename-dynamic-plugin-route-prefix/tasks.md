@@ -54,6 +54,7 @@
 - [x] **FB-10**: 将动态插件 apidoc i18n key 收敛为 `method + public path` 派生，不再使用 `operationId` 或 `RequestType` 作为翻译身份
 - [x] **FB-11**: 将动态插件路由分组前缀从生成 API 文件迁移到后端 `RegisterRoutes` 注册声明
 - [x] **FB-12**: 补充动态插件 `RegisterRoutes` 和 `registrar.Group(...)` 的中英文注释说明
+- [x] **FB-13**: `linactl wasm out=temp/output` 在 `apps/lina-plugins` 下执行时把动态插件产物写入插件工作区 `temp/output`
 
 ## Feedback Verification
 
@@ -172,3 +173,13 @@
 - [x] FB-12 数据权限影响：本次仅补充注释，不新增、修改或扩大业务数据操作接口，动态插件 demo 记录接口的数据权限边界不变。
 - [x] FB-12 开发工具脚本影响：本次不新增或修改开发工具、脚本、构建入口或跨平台执行路径。
 - [x] FB-12 `/lina-review`：审查范围限定为动态插件 `RegisterRoutes` 注释和 OpenSpec 反馈记录；未发现阻塞问题。变更仅解释构建期约定入口和 `registrar.Group(dynamicAPIV1GroupPrefix, "dynamic/v1")` 的参数含义，不改变路由契约生成、运行时请求分发、i18n 资源、缓存或数据权限行为。
+- [x] FB-13 linactl 精准回归：`go test ./hack/tools/linactl -run TestRunWasmResolvesExplicitRelativeOutputFromRepositoryRoot -count=1`
+- [x] FB-13 linactl 构建器：`go test ./hack/tools/linactl/internal/wasmbuilder -count=1`
+- [x] FB-13 开发工具门禁：`go test ./hack/tools/linactl/... -count=1`
+- [x] FB-13 动态插件产物构建：`cd apps/lina-plugins && go run ../../hack/tools/linactl wasm p=linapro-demo-dynamic out=temp/output`；确认输出为仓库根 `temp/output/linapro-demo-dynamic.wasm`，并清理旧的 `apps/lina-plugins/temp/output` 遗留产物。
+- [x] FB-13 OpenSpec：`openspec validate rename-dynamic-plugin-route-prefix --strict`
+- [x] FB-13 i18n 影响：本次仅更新 `linactl` 双语 README 中 `out` 参数说明，不新增、修改或删除用户可见运行时文案、前端语言包、manifest i18n 或 apidoc i18n JSON。
+- [x] FB-13 缓存一致性：本次仅调整开发工具产物路径解析和文档说明，不新增或修改运行时缓存、失效、刷新、修订号或跨实例同步逻辑。
+- [x] FB-13 数据权限影响：本次不新增、修改或扩大业务数据操作接口，不影响动态插件 demo 记录接口的数据权限边界。
+- [x] FB-13 开发工具脚本影响：本次修改 `linactl` Go 工具，不新增 shell/PowerShell 脚本；已通过 `go test ./hack/tools/linactl/... -count=1` 和实际 `linactl wasm` 构建验证跨平台 Go 工具入口。
+- [x] FB-13 `/lina-review`：审查范围包含 `linactl wasm` 输出目录解析、回归单测、双语 README 参数说明和 OpenSpec 反馈记录；未发现阻塞问题。`git status --short --ignored --ignore-submodules=none` 中存在无关的 `apps/lina-core/internal/cmd/*` 与 `decouple-workspace-plugin-routes/tasks.md` 变更，未纳入本次审查。本次不涉及运行时后端服务、REST API、前端运行时文案、manifest i18n、apidoc i18n、缓存或数据权限逻辑。
