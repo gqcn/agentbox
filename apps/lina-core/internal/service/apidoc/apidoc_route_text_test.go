@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/gogf/gf/v2/net/goai"
 	"github.com/gogf/gf/v2/os/gctx"
 
 	"lina-core/internal/model"
@@ -50,15 +51,15 @@ func TestResolveRouteTextUsesApidocCatalog(t *testing.T) {
 // operation key bases that can be matched against persisted audit records.
 func TestFindRouteTitleOperationKeys(t *testing.T) {
 	restoreCatalog := registerOpenAPITestCatalog("zh-CN", map[string]string{
-		"core.api.user.v1.ListReq.meta.tags":                               "用户管理",
-		"plugins.linapro_demo_dynamic.paths.get.backend_summary.meta.tags": "动态插件示例",
+		"core.api.user.v1.ListReq.meta.tags":                                      "用户管理",
+		"plugins.linapro_demo_dynamic.paths.get.api.v1.backend_summary.meta.tags": "动态插件示例",
 	})
 	defer restoreCatalog()
 
 	service := New(&testConfigProvider{}, bizctx.New(), i18nsvc.New(bizctx.New(), configsvc.New(), cachecoord.Default(nil)), &testPluginRouteProvider{}).(*serviceImpl)
 	ctx := context.WithValue(context.Background(), gctx.StrKey("BizCtx"), &model.Context{Locale: "zh-CN"})
 	keys := service.FindRouteTitleOperationKeys(ctx, "动态")
-	expectedKey := "plugins.linapro_demo_dynamic.paths.get.backend_summary"
+	expectedKey := "plugins.linapro_demo_dynamic.paths.get.api.v1.backend_summary"
 	for _, key := range keys {
 		if key == expectedKey {
 			return
@@ -70,8 +71,20 @@ func TestFindRouteTitleOperationKeys(t *testing.T) {
 // TestBuildRouteOperationKeyFromPathNormalizesMethod verifies persisted route
 // methods can be uppercase while apidoc path keys remain lowercase.
 func TestBuildRouteOperationKeyFromPathNormalizesMethod(t *testing.T) {
-	key := BuildRouteOperationKeyFromPath("/x/linapro-demo-dynamic/backend-summary", "GET")
-	if key != "plugins.linapro_demo_dynamic.paths.get.backend_summary" {
+	key := BuildRouteOperationKeyFromPath("/x/linapro-demo-dynamic/api/v1/backend-summary", "GET")
+	if key != "plugins.linapro_demo_dynamic.paths.get.api.v1.backend_summary" {
 		t.Fatalf("expected lower-case dynamic path key, got %s", key)
+	}
+}
+
+// TestOperationBaseKeyIgnoresDynamicOperationID verifies dynamic OpenAPI
+// operations derive their apidoc key from public path and method.
+func TestOperationBaseKeyIgnoresDynamicOperationID(t *testing.T) {
+	localizer := &openAPILocalizer{}
+	key := localizer.operationBaseKey("/x/linapro-demo-dynamic/api/v1/backend-summary", "get", &goai.Operation{
+		OperationID: "linapro_demo_dynamic_backendSummary",
+	})
+	if key != "plugins.linapro_demo_dynamic.paths.get.api.v1.backend_summary" {
+		t.Fatalf("expected path-derived key, got %s", key)
 	}
 }

@@ -144,6 +144,7 @@ func (s *serviceImpl) loadRuntimeManifestFromArtifact(artifactPath string) (*Man
 		Description:         strings.TrimSpace(artifact.Manifest.Description),
 		Dependencies:        CloneDependencySpec(artifact.Manifest.Dependencies),
 		Menus:               artifact.Manifest.Menus,
+		PublicAssets:        ClonePublicAssetSpecs(artifact.Manifest.PublicAssets),
 		ManifestPath:        "",
 		RootDir:             filepath.Dir(artifactPath),
 		LifecycleHandlers:   CloneLifecycleContracts(artifact.LifecycleContracts),

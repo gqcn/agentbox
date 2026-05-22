@@ -158,7 +158,7 @@ func TestDynamicPluginRuntimeUpgradeFailureRollsBackStableRelease(t *testing.T) 
 		nil,
 		[]*pluginbridge.RouteContract{
 			{
-				Path:       "/review-summary",
+				Path:       "/api/v1/review-summary",
 				Method:     http.MethodGet,
 				Access:     pluginbridge.AccessLogin,
 				Permission: permissionOne,
@@ -203,7 +203,7 @@ func TestDynamicPluginRuntimeUpgradeFailureRollsBackStableRelease(t *testing.T) 
 		nil,
 		[]*pluginbridge.RouteContract{
 			{
-				Path:       "/review-summary",
+				Path:       "/api/v1/review-summary",
 				Method:     http.MethodGet,
 				Access:     pluginbridge.AccessLogin,
 				Permission: permissionTwo,
@@ -445,7 +445,7 @@ func TestInstallSameVersionDynamicPluginRefreshesArchivedReleaseArtifact(t *test
 
 	initialRoutes := []*pluginbridge.RouteContract{
 		{
-			Path:       "/review-summary",
+			Path:       "/api/v1/review-summary",
 			Method:     http.MethodGet,
 			Access:     pluginbridge.AccessLogin,
 			Permission: pluginID + ":review:view",
@@ -503,7 +503,7 @@ func TestInstallSameVersionDynamicPluginRefreshesArchivedReleaseArtifact(t *test
 
 	refreshedRoutes := []*pluginbridge.RouteContract{
 		{
-			Path:       "/review-summary",
+			Path:       "/api/v1/review-summary",
 			Method:     http.MethodGet,
 			Access:     pluginbridge.AccessLogin,
 			Permission: pluginID + ":review:inspect",

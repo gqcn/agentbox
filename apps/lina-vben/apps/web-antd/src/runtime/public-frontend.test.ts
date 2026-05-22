@@ -85,6 +85,9 @@ describe('public frontend runtime settings', () => {
           ui: {
             themeMode: 'dark',
           },
+          workspace: {
+            basePath: '/admin',
+          },
         },
       }),
       ok: true,
@@ -112,9 +115,11 @@ describe('public frontend runtime settings', () => {
     expect(publicFrontendSettings.auth.panelLayout).toBe('panel-right');
     expect(publicFrontendSettings.user.defaultAvatar).toBe('/avatar.webp');
     expect(publicFrontendSettings.ui.themeMode).toBe('dark');
+    expect(publicFrontendSettings.workspace.basePath).toBe('/admin');
     expect(settings?.auth.panelLayout).toBe('panel-right');
     expect(settings?.user.defaultAvatar).toBe('/avatar.webp');
     expect(settings?.ui.themeMode).toBe('dark');
+    expect(settings?.workspace.basePath).toBe('/admin');
     expect(updatePreferences).toHaveBeenCalledWith(
       expect.objectContaining({
         app: expect.objectContaining({
@@ -199,5 +204,37 @@ describe('public frontend runtime settings', () => {
       }),
       { markUserThemePreference: false },
     );
+  });
+
+  it('normalizes the startup workspace base path exposed to the router', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      json: async () => ({
+        data: {
+          app: {},
+          auth: {},
+          cron: {},
+          ui: {},
+          workspace: {
+            basePath: '///console///',
+          },
+        },
+      }),
+      ok: true,
+    } as Response);
+
+    const {
+      normalizeWorkspaceBasePath,
+      publicFrontendSettings,
+      resolveWorkspaceRouterBase,
+      syncPublicFrontendSettings,
+    } = await import('./public-frontend');
+    const settings = await syncPublicFrontendSettings();
+
+    expect(settings?.workspace.basePath).toBe('/console');
+    expect(publicFrontendSettings.workspace.basePath).toBe('/console');
+    expect(resolveWorkspaceRouterBase()).toBe('/console/');
+    expect(normalizeWorkspaceBasePath('/')).toBe('/admin');
+    expect(normalizeWorkspaceBasePath('/x')).toBe('/admin');
+    expect(normalizeWorkspaceBasePath('/x-assets/plugin')).toBe('/admin');
   });
 });

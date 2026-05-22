@@ -38,8 +38,8 @@ func WithAuthoritativeEnablement(ctx context.Context) context.Context {
 	return context.WithValue(ctx, authoritativeEnablementContextKey{}, true)
 }
 
-// IsEnabled reports whether the plugin with the given ID can expose business entries.
-func (s *serviceImpl) IsEnabled(ctx context.Context, pluginID string) bool {
+// CanExposeBusinessEntries reports whether the plugin with the given ID can expose business entries.
+func (s *serviceImpl) CanExposeBusinessEntries(ctx context.Context, pluginID string) bool {
 	normalizedPluginID := strings.TrimSpace(pluginID)
 	if normalizedPluginID == "" || s == nil {
 		return false
@@ -56,6 +56,24 @@ func (s *serviceImpl) IsEnabled(ctx context.Context, pluginID string) bool {
 	}
 	manifest, _ := s.catalogSvc.GetDesiredManifest(normalizedPluginID)
 	enabled, err := s.registryBusinessEntryEnabledForTenant(ctx, registry, manifest)
+	return err == nil && enabled
+}
+
+// IsInstalledEnabledForTenant reports whether the plugin is installed, enabled,
+// and available for the current tenant without applying business-entry upgrade
+// gates. Callers that serve immutable versioned surfaces can use this to keep
+// the active stable release available while business entries remain gated by
+// CanExposeBusinessEntries.
+func (s *serviceImpl) IsInstalledEnabledForTenant(ctx context.Context, pluginID string) bool {
+	normalizedPluginID := strings.TrimSpace(pluginID)
+	if normalizedPluginID == "" || s == nil || s.catalogSvc == nil {
+		return false
+	}
+	registry, err := s.catalogSvc.GetRegistry(ctx, normalizedPluginID)
+	if err != nil || registry == nil {
+		return false
+	}
+	enabled, err := s.registryEnabledForTenant(ctx, registry)
 	return err == nil && enabled
 }
 
@@ -400,13 +418,13 @@ func (s *serviceImpl) buildBackgroundEnabledChecker() pluginhost.PluginEnabledCh
 			ctx = context.Background()
 		}
 		if datascope.CurrentTenantID(ctx) != datascope.PlatformTenantID {
-			return s.IsEnabled(ctx, normalizedPluginID)
+			return s.CanExposeBusinessEntries(ctx, normalizedPluginID)
 		}
 
 		if enabled, ok := s.loadedPlatformEnabledState(ctx, normalizedPluginID); ok {
 			return enabled
 		}
-		return s.IsEnabled(ctx, normalizedPluginID)
+		return s.CanExposeBusinessEntries(ctx, normalizedPluginID)
 	}
 }
 

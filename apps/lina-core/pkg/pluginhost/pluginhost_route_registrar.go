@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/net/ghttp"
 	"github.com/gogf/gf/v2/os/gctx"
 )
@@ -44,6 +45,10 @@ type RouteMiddlewares interface {
 
 // RouteRegistrar exposes plugin route group registration helpers for one plugin.
 type RouteRegistrar interface {
+	// APIPrefix returns the mandatory public API prefix for this plugin.
+	APIPrefix() string
+	// Err returns the first route registration error captured by the registrar.
+	Err() error
 	// Group registers one plugin route group bound to the dedicated plugin router root.
 	Group(prefix string, register func(group RouteGroup))
 	// Middlewares returns the published host middlewares available to plugins.
@@ -55,6 +60,8 @@ type RouteRegistrar interface {
 // RouteGroup exposes one host-observable subset of GoFrame router-group
 // registration methods for source plugins.
 type RouteGroup interface {
+	// Err returns the first route registration error captured by this group.
+	Err() error
 	// Group registers one nested route group.
 	Group(prefix string, register func(group RouteGroup))
 	// Middleware appends one or more middleware handlers to the current group.
@@ -92,6 +99,8 @@ type routeRegistrar struct {
 	middlewares    RouteMiddlewares
 	bindingsMu     sync.RWMutex
 	bindings       []SourceRouteBinding
+	errMu          sync.RWMutex
+	err            error
 }
 
 // routeGroup adapts one GoFrame router group to the reduced plugin RouteGroup
@@ -101,6 +110,8 @@ type routeGroup struct {
 	pluginID  string
 	prefix    string
 	bindRoute func(bindings ...SourceRouteBinding)
+	setError  func(error)
+	getError  func() error
 }
 
 // routeMiddlewares stores the published host middleware directory that source
@@ -163,6 +174,24 @@ func NewRouteRegistrar(
 	}
 }
 
+// APIPrefix returns the mandatory public API prefix for this plugin.
+func (r *routeRegistrar) APIPrefix() string {
+	if r == nil {
+		return ""
+	}
+	return pluginAPIPrefix(r.pluginID)
+}
+
+// Err returns the first route registration error captured by this registrar.
+func (r *routeRegistrar) Err() error {
+	if r == nil {
+		return nil
+	}
+	r.errMu.RLock()
+	defer r.errMu.RUnlock()
+	return r.err
+}
+
 // Group registers one plugin route group bound to the dedicated plugin router root.
 func (r *routeRegistrar) Group(prefix string, register func(group RouteGroup)) {
 	if r == nil || r.group == nil || register == nil {
@@ -170,6 +199,10 @@ func (r *routeRegistrar) Group(prefix string, register func(group RouteGroup)) {
 	}
 
 	normalizedPrefix := normalizeRoutePrefix(prefix)
+	if err := validateSourceRoutePrefix(r.pluginID, normalizedPrefix); err != nil {
+		r.setError(err)
+		return
+	}
 	r.group.Group(normalizedPrefix, func(group *ghttp.RouterGroup) {
 		group.Middleware(func(req *ghttp.Request) {
 			if !r.allow(req) {
@@ -182,6 +215,8 @@ func (r *routeRegistrar) Group(prefix string, register func(group RouteGroup)) {
 			pluginID:  r.pluginID,
 			prefix:    normalizedPrefix,
 			bindRoute: r.appendBindings,
+			setError:  r.setError,
+			getError:  r.Err,
 		})
 	})
 }
@@ -284,7 +319,7 @@ func (m *routeMiddlewares) Permission() RouteMiddleware {
 }
 
 // normalizeRoutePrefix canonicalizes plugin-owned route group prefixes so
-// callers can register `/api/v1`, `api/v1/`, or `/` interchangeably.
+// callers can register `api/v1`, `/api/v1/`, or `/` interchangeably.
 func normalizeRoutePrefix(prefix string) string {
 	trimmed := strings.TrimSpace(prefix)
 	if trimmed == "" || trimmed == "/" {
@@ -294,6 +329,55 @@ func normalizeRoutePrefix(prefix string) string {
 		trimmed = "/" + trimmed
 	}
 	return strings.TrimRight(trimmed, "/")
+}
+
+// pluginAPIPrefix returns the mandatory plugin-owned namespace for one plugin ID.
+func pluginAPIPrefix(pluginID string) string {
+	return PluginAPINamespacePrefix + "/" + strings.Trim(strings.TrimSpace(pluginID), "/")
+}
+
+// validateSourceRoutePrefix rejects source-plugin registrations that try to use
+// `/x` for anything outside the owning plugin namespace.
+func validateSourceRoutePrefix(pluginID string, prefix string) error {
+	normalizedPrefix := normalizeRoutePrefix(prefix)
+	return validateSourceRoutePath(pluginID, normalizedPrefix)
+}
+
+// validateSourceRoutePath rejects final source-plugin route paths that try to
+// use `/x` for anything outside the owning plugin namespace.
+func validateSourceRoutePath(pluginID string, routePath string) error {
+	if routePathHasTraversal(routePath) {
+		return gerror.Newf("source plugin %s cannot register route with traversal segments: %s", strings.TrimSpace(pluginID), routePath)
+	}
+	normalizedPrefix := normalizeRoutePrefix(routePath)
+	if normalizedPrefix == "/" {
+		return nil
+	}
+	if normalizedPrefix != PluginAPINamespacePrefix && !strings.HasPrefix(normalizedPrefix, PluginAPINamespacePrefix+"/") {
+		return nil
+	}
+	apiPrefix := pluginAPIPrefix(pluginID)
+	if normalizedPrefix == apiPrefix || strings.HasPrefix(normalizedPrefix, apiPrefix+"/") {
+		return nil
+	}
+	return gerror.Newf(
+		"source plugin %s cannot register route outside its /x namespace: %s; use %s for plugin routes",
+		strings.TrimSpace(pluginID),
+		normalizedPrefix,
+		apiPrefix,
+	)
+}
+
+// routePathHasTraversal reports whether a plugin-supplied route contains dot
+// segments that could change the effective reserved namespace after cleaning.
+func routePathHasTraversal(routePath string) bool {
+	parts := strings.Split(strings.ReplaceAll(strings.TrimSpace(routePath), "\\", "/"), "/")
+	for _, part := range parts {
+		if part == ".." || part == "." {
+			return true
+		}
+	}
+	return false
 }
 
 // appendBindings appends captured plugin route bindings to the registrar-local
@@ -307,18 +391,45 @@ func (r *routeRegistrar) appendBindings(bindings ...SourceRouteBinding) {
 	r.bindings = append(r.bindings, bindings...)
 }
 
+// setError records the first route registration error for the registrar.
+func (r *routeRegistrar) setError(err error) {
+	if r == nil || err == nil {
+		return
+	}
+	r.errMu.Lock()
+	defer r.errMu.Unlock()
+	if r.err == nil {
+		r.err = err
+	}
+}
+
+// Err returns the first route registration error captured by this group.
+func (g *routeGroup) Err() error {
+	if g == nil || g.getError == nil {
+		return nil
+	}
+	return g.getError()
+}
+
 // Group registers one nested route group.
 func (g *routeGroup) Group(prefix string, register func(group RouteGroup)) {
 	if g == nil || g.group == nil || register == nil {
 		return
 	}
 	normalizedPrefix := normalizeRoutePrefix(prefix)
+	joinedPrefix := joinRoutePatterns(g.prefix, normalizedPrefix)
+	if err := validateSourceRoutePath(g.pluginID, joinedPrefix); err != nil {
+		g.setRegistrationError(err)
+		return
+	}
 	g.group.Group(normalizedPrefix, func(group *ghttp.RouterGroup) {
 		register(&routeGroup{
 			group:     group,
 			pluginID:  g.pluginID,
-			prefix:    joinRoutePatterns(g.prefix, normalizedPrefix),
+			prefix:    joinedPrefix,
 			bindRoute: g.bindRoute,
+			setError:  g.setError,
+			getError:  g.getError,
 		})
 	})
 }
@@ -337,8 +448,13 @@ func (g *routeGroup) Bind(handlerOrObject ...interface{}) {
 		return
 	}
 	for _, item := range handlerOrObject {
-		if g.bindRoute != nil {
-			g.bindRoute(captureRouteBindings(g.pluginID, g.prefix, "/", routeMethodAll, item)...)
+		bindings := captureRouteBindings(g.pluginID, g.prefix, "/", routeMethodAll, item)
+		if err := validateSourceRouteBindings(g.pluginID, bindings); err != nil {
+			g.setRegistrationError(err)
+			return
+		}
+		if g.bindRoute != nil && len(bindings) > 0 {
+			g.bindRoute(bindings...)
 		}
 	}
 	g.group.Bind(handlerOrObject...)
@@ -426,8 +542,39 @@ func (g *routeGroup) bindMethodRoute(
 	if g == nil || g.group == nil || bind == nil {
 		return
 	}
+	bindings := captureRouteBindings(g.pluginID, g.prefix, pattern, method, object)
+	if len(bindings) == 0 {
+		finalPath := joinRoutePatterns(g.prefix, pattern)
+		if err := validateSourceRoutePath(g.pluginID, finalPath); err != nil {
+			g.setRegistrationError(err)
+			return
+		}
+	}
+	if err := validateSourceRouteBindings(g.pluginID, bindings); err != nil {
+		g.setRegistrationError(err)
+		return
+	}
 	if g.bindRoute != nil {
-		g.bindRoute(captureRouteBindings(g.pluginID, g.prefix, pattern, method, object)...)
+		g.bindRoute(bindings...)
 	}
 	bind()
+}
+
+// setRegistrationError records one invalid route registration on the owning registrar.
+func (g *routeGroup) setRegistrationError(err error) {
+	if g == nil || err == nil || g.setError == nil {
+		return
+	}
+	g.setError(err)
+}
+
+// validateSourceRouteBindings checks documentable DTO routes after their
+// GoFrame metadata has resolved to final public paths.
+func validateSourceRouteBindings(pluginID string, bindings []SourceRouteBinding) error {
+	for _, binding := range bindings {
+		if err := validateSourceRoutePath(pluginID, binding.Path); err != nil {
+			return err
+		}
+	}
+	return nil
 }

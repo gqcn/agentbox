@@ -22,6 +22,7 @@ import (
 	"lina-core/internal/service/session"
 	"lina-core/pkg/authtoken"
 	bridgecontract "lina-core/pkg/pluginbridge/contract"
+	"lina-core/pkg/pluginhost"
 )
 
 // TestTouchDynamicRouteSessionKeepsExistingSessionWhenTimestampDoesNotChange verifies
@@ -438,7 +439,7 @@ func signDynamicRouteImpersonationTestToken(
 // bearer token.
 func buildDynamicRouteAccessTestRequest(tokenString string) *ghttp.Request {
 	request := &ghttp.Request{}
-	request.Request = httptest.NewRequest(http.MethodGet, RoutePublicPrefix+"/plugin-dev-dynamic-route/access", nil)
+	request.Request = httptest.NewRequest(http.MethodGet, pluginhost.PluginAPINamespacePrefix+"/plugin-dev-dynamic-route/access", nil)
 	request.Header.Set("Authorization", "Bearer "+tokenString)
 	return request
 }

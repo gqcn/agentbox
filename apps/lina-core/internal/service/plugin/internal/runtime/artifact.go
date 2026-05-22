@@ -336,9 +336,42 @@ func (s *serviceImpl) ValidateRuntimeArtifact(manifest *catalog.Manifest, rootDi
 	if manifest.Version != artifact.Manifest.Version {
 		return gerror.Newf("Dynamic plugin embedded manifest version does not match plugin.yaml: %s != %s", artifact.Manifest.Version, manifest.Version)
 	}
+	if !publicAssetDeclarationsMatch(manifest.PublicAssets, artifact.Manifest.PublicAssets) {
+		return gerror.Newf("Dynamic plugin embedded public_assets does not match plugin.yaml: %s", artifactPath)
+	}
 
 	manifest.RuntimeArtifact = artifact
 	return nil
+}
+
+// publicAssetDeclarationsMatch compares plugin.yaml and embedded manifest
+// public_assets declarations after catalog-level normalization.
+func publicAssetDeclarationsMatch(left []*catalog.PublicAssetSpec, right []*catalog.PublicAssetSpec) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index, item := range left {
+		other := right[index]
+		if item == nil || other == nil {
+			return item == nil && other == nil
+		}
+		if strings.TrimSpace(item.Source) != strings.TrimSpace(other.Source) ||
+			strings.TrimSpace(item.Mount) != strings.TrimSpace(other.Mount) ||
+			normalizedPublicAssetIndex(item.Index) != normalizedPublicAssetIndex(other.Index) {
+			return false
+		}
+	}
+	return true
+}
+
+// normalizedPublicAssetIndex compares omitted and explicit default index values
+// as the same declaration while still preserving custom index filenames.
+func normalizedPublicAssetIndex(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return catalog.DefaultPublicAssetIndex()
+	}
+	return trimmed
 }
 
 // ensureArtifactAvailable ensures the WASM artifact is present for lifecycle operations.

@@ -66,6 +66,9 @@ type Manifest struct {
 	Dependencies *DependencySpec `yaml:"dependencies"`
 	// Menus holds manifest-declared host menu entries.
 	Menus []*MenuSpec `yaml:"menus"`
+	// PublicAssets declares plugin-relative frontend asset directories that the
+	// host may expose through the versioned /x-assets namespace.
+	PublicAssets []*PublicAssetSpec `yaml:"public_assets" json:"public_assets,omitempty"`
 	// ManifestPath is the filesystem path to the plugin.yaml file (source plugins).
 	ManifestPath string
 	// RootDir is the plugin root directory path.
@@ -136,6 +139,17 @@ type MenuSpec struct {
 	QueryParam string `yaml:"query_param,omitempty" json:"query_param,omitempty"`
 	// Remark is an optional description.
 	Remark string `yaml:"remark,omitempty" json:"remark,omitempty"`
+}
+
+// PublicAssetSpec defines one plugin-owned static asset directory exposed by
+// the host through /x-assets/{plugin-id}/{version}/...
+type PublicAssetSpec struct {
+	// Source is the plugin-relative source directory or dynamic artifact asset prefix.
+	Source string `yaml:"source" json:"source"`
+	// Mount is the optional URL-relative mount point under the plugin version root.
+	Mount string `yaml:"mount,omitempty" json:"mount,omitempty"`
+	// Index is the default file returned when the mount directory itself is requested.
+	Index string `yaml:"index,omitempty" json:"index,omitempty"`
 }
 
 // HookSpec defines a plugin-declared hook handler.
@@ -291,6 +305,9 @@ type ArtifactManifest struct {
 	Dependencies *DependencySpec `json:"dependencies,omitempty" yaml:"dependencies,omitempty"`
 	// Menus holds manifest-declared host menu entries.
 	Menus []*MenuSpec `json:"menus,omitempty" yaml:"menus,omitempty"`
+	// PublicAssets declares frontend asset prefixes that may be served through
+	// the host's /x-assets namespace.
+	PublicAssets []*PublicAssetSpec `json:"public_assets,omitempty" yaml:"public_assets,omitempty"`
 }
 
 // DependencySpec defines the dependency constraints declared by one plugin.

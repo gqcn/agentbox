@@ -291,6 +291,7 @@ type ManifestSnapshot struct {
 	RouteResponseCodec        string                          `yaml:"routeResponseCodec,omitempty"`
 	RuntimeFrontendAssetCount int                             `yaml:"runtimeFrontendAssetCount,omitempty"`
 	RuntimeSQLAssetCount      int                             `yaml:"runtimeSqlAssetCount,omitempty"`
+	PublicAssets              []*PublicAssetSpec              `yaml:"public_assets,omitempty"`
 	RequestedHostServices     []*pluginbridge.HostServiceSpec `yaml:"requestedHostServices,omitempty"`
 	AuthorizedHostServices    []*pluginbridge.HostServiceSpec `yaml:"authorizedHostServices,omitempty"`
 	HostServiceAuthRequired   bool                            `yaml:"hostServiceAuthRequired,omitempty"`

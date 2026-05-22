@@ -170,6 +170,12 @@ func (d *guestControllerRouteDispatcher) HandleRequest(
 		if ok {
 			return handler(request)
 		}
+		if requestType != "" {
+			handler, ok = d.handlersByRequestType[requestType]
+			if ok {
+				return handler(request)
+			}
+		}
 	}
 
 	if requestType == "" && internalPath == "" {

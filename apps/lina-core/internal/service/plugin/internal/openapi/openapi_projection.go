@@ -79,7 +79,6 @@ func buildRouteOpenAPIOperation(
 		Tags:        append([]string(nil), route.Tags...),
 		Summary:     route.Summary,
 		Description: route.Description,
-		OperationID: pluginID + "_" + strings.ToLower(route.Method) + "_" + strings.ReplaceAll(strings.Trim(route.Path, "/"), "/", "_"),
 		Responses: goai.Responses{
 			"500": goai.ResponseRef{Value: &goai.Response{Description: "Dynamic plugin route execution failed"}},
 		},

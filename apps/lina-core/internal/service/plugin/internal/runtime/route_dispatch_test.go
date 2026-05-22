@@ -20,6 +20,7 @@ import (
 	"lina-core/internal/service/plugin/internal/runtime"
 	"lina-core/internal/service/plugin/internal/testutil"
 	"lina-core/pkg/pluginbridge"
+	"lina-core/pkg/pluginhost"
 )
 
 // TestMatchDynamicRoutePathSupportsParams verifies parameter placeholders are
@@ -40,7 +41,7 @@ func TestBuildDynamicRouteMetadataMapsRouteGovernance(t *testing.T) {
 	metadata := runtime.BuildDynamicRouteMetadata(&runtime.DynamicRouteRuntimeState{
 		Match: &runtime.DynamicRouteMatch{
 			PluginID:   "linapro-demo-dynamic",
-			PublicPath: "/x/linapro-demo-dynamic/review",
+			PublicPath: "/x/linapro-demo-dynamic/api/v1/review",
 			Route: &pluginbridge.RouteContract{
 				Method:  http.MethodGet,
 				Tags:    []string{"plugin-review", "dynamic"},
@@ -60,7 +61,7 @@ func TestBuildDynamicRouteMetadataMapsRouteGovernance(t *testing.T) {
 	if metadata.Method != http.MethodGet {
 		t.Fatalf("expected method GET, got %q", metadata.Method)
 	}
-	if metadata.PublicPath != "/x/linapro-demo-dynamic/review" {
+	if metadata.PublicPath != "/x/linapro-demo-dynamic/api/v1/review" {
 		t.Fatalf("expected public path to be preserved, got %q", metadata.PublicPath)
 	}
 	if len(metadata.Tags) != 2 || metadata.Tags[0] != "plugin-review" || metadata.Tags[1] != "dynamic" {
@@ -89,12 +90,12 @@ func TestDispatchDynamicRouteReturnsNotFoundWhenTenantPluginDisabled(t *testing.
 		pluginID,
 		"Tenant Disabled Route Plugin",
 		"v1.0.0",
-		nil,
+		testutil.DefaultTestRuntimeFrontendAssets(),
 		nil,
 		nil,
 		[]*pluginbridge.RouteContract{
 			{
-				Path:   "/summary",
+				Path:   "/api/v1/summary",
 				Method: http.MethodGet,
 				Access: pluginbridge.AccessPublic,
 			},
@@ -150,7 +151,7 @@ func TestDispatchDynamicRouteReturnsNotFoundWhenTenantPluginDisabled(t *testing.
 	}
 
 	request := &ghttp.Request{}
-	request.Request = httptest.NewRequest(http.MethodGet, runtime.RoutePublicPrefix+"/"+pluginID+"/summary", nil)
+	request.Request = httptest.NewRequest(http.MethodGet, pluginhost.PluginAPINamespacePrefix+"/"+pluginID+"/api/v1/summary", nil)
 	response, err := services.Runtime.DispatchDynamicRoute(ctx, &runtime.DynamicRouteDispatchInput{Request: request})
 	if err != nil {
 		t.Fatalf("dispatch disabled tenant plugin route failed: %v", err)
@@ -187,12 +188,12 @@ func TestDispatchDynamicRouteReturnsUpgradeRequiredWhenPendingUpgrade(t *testing
 		pluginID,
 		"Dynamic Route Pending Upgrade Plugin",
 		oldVersion,
-		nil,
+		testutil.DefaultTestRuntimeFrontendAssets(),
 		nil,
 		nil,
 		[]*pluginbridge.RouteContract{
 			{
-				Path:   "/summary",
+				Path:   "/api/v1/summary",
 				Method: http.MethodGet,
 				Access: pluginbridge.AccessPublic,
 			},
@@ -232,12 +233,12 @@ func TestDispatchDynamicRouteReturnsUpgradeRequiredWhenPendingUpgrade(t *testing
 		pluginID,
 		"Dynamic Route Pending Upgrade Plugin",
 		newVersion,
-		nil,
+		testutil.DefaultTestRuntimeFrontendAssets(),
 		nil,
 		nil,
 		[]*pluginbridge.RouteContract{
 			{
-				Path:   "/summary",
+				Path:   "/api/v1/summary",
 				Method: http.MethodGet,
 				Access: pluginbridge.AccessPublic,
 			},
@@ -259,7 +260,7 @@ func TestDispatchDynamicRouteReturnsUpgradeRequiredWhenPendingUpgrade(t *testing
 	}
 
 	request := &ghttp.Request{}
-	request.Request = httptest.NewRequest(http.MethodGet, runtime.RoutePublicPrefix+"/"+pluginID+"/summary", nil)
+	request.Request = httptest.NewRequest(http.MethodGet, pluginhost.PluginAPINamespacePrefix+"/"+pluginID+"/api/v1/summary", nil)
 	response, err := services.Runtime.DispatchDynamicRoute(ctx, &runtime.DynamicRouteDispatchInput{Request: request})
 	if err != nil {
 		t.Fatalf("expected pending-upgrade dynamic route to return bridge failure response, got error: %v", err)
@@ -272,25 +273,115 @@ func TestDispatchDynamicRouteReturnsUpgradeRequiredWhenPendingUpgrade(t *testing
 	}
 }
 
-// TestDispatchDynamicRouteRejectsFormerVersionedPrefix verifies the runtime no
-// longer dispatches dynamic plugin routes under the host control-plane API prefix.
-func TestDispatchDynamicRouteRejectsFormerVersionedPrefix(t *testing.T) {
-	request := &ghttp.Request{}
-	request.Request = httptest.NewRequest(
-		http.MethodGet,
-		"/api/v1/extensions/plugin-dev-dynamic-route/summary",
-		nil,
+// TestDispatchDynamicRouteAllowsPluginOwnedPathShapes verifies the runtime only
+// forces the `/x/{pluginId}` prefix and preserves the following plugin-owned
+// path content for contract matching and bridge metadata.
+func TestDispatchDynamicRouteAllowsPluginOwnedPathShapes(t *testing.T) {
+	var (
+		services = testutil.NewServices()
+		ctx      = context.Background()
+		pluginID = "plugin-dev-dynamic-route-owned-paths"
 	)
 
-	response, err := testutil.NewServices().Runtime.DispatchDynamicRoute(
-		context.Background(),
-		&runtime.DynamicRouteDispatchInput{Request: request},
+	artifactPath := testutil.CreateTestRuntimeStorageArtifactWithFrontendAssetsAndBackendContracts(
+		t,
+		pluginID,
+		"Dynamic Route Owned Paths Plugin",
+		"v1.0.0",
+		testutil.DefaultTestRuntimeFrontendAssets(),
+		nil,
+		nil,
+		[]*pluginbridge.RouteContract{
+			{
+				Path:   "/api/v2/summary",
+				Method: http.MethodGet,
+				Access: pluginbridge.AccessPublic,
+			},
+			{
+				Path:   "/interface/m1/summary",
+				Method: http.MethodGet,
+				Access: pluginbridge.AccessPublic,
+			},
+			{
+				Path:   "/graphql",
+				Method: http.MethodPost,
+				Access: pluginbridge.AccessPublic,
+			},
+			{
+				Path:   "/",
+				Method: http.MethodGet,
+				Access: pluginbridge.AccessPublic,
+			},
+		},
+		&pluginbridge.BridgeSpec{
+			ABIVersion:     pluginbridge.SupportedABIVersion,
+			RuntimeKind:    pluginbridge.RuntimeKindWasm,
+			RouteExecution: false,
+		},
 	)
+	testutil.CleanupPluginGovernanceRowsHard(t, ctx, pluginID)
+	t.Cleanup(func() {
+		testutil.CleanupPluginGovernanceRowsHard(t, ctx, pluginID)
+	})
+
+	manifest, err := services.Catalog.LoadManifestFromArtifactPath(artifactPath)
 	if err != nil {
-		t.Fatalf("expected former dynamic route prefix to return bridge response, got error: %v", err)
+		t.Fatalf("load dynamic route manifest failed: %v", err)
 	}
-	if response == nil || response.StatusCode != http.StatusNotFound {
-		t.Fatalf("expected former dynamic route prefix to return 404, got %#v", response)
+	manifest.ScopeNature = catalog.ScopeNaturePlatformOnly.String()
+	manifest.DefaultInstallMode = catalog.InstallModeGlobal.String()
+	if _, err = services.Catalog.SyncManifest(ctx, manifest); err != nil {
+		t.Fatalf("sync dynamic route manifest failed: %v", err)
+	}
+	if err = services.Catalog.SetPluginInstalled(ctx, pluginID, catalog.InstalledYes); err != nil {
+		t.Fatalf("set dynamic route plugin installed failed: %v", err)
+	}
+	if err = services.Catalog.SetPluginStatus(ctx, pluginID, catalog.StatusEnabled); err != nil {
+		t.Fatalf("set dynamic route plugin enabled failed: %v", err)
+	}
+	services.Integration.SetPluginEnabledState(pluginID, true)
+
+	tests := []struct {
+		name       string
+		method     string
+		publicPath string
+	}{
+		{
+			name:       "api v2",
+			method:     http.MethodGet,
+			publicPath: "/x/" + pluginID + "/api/v2/summary",
+		},
+		{
+			name:       "interface",
+			method:     http.MethodGet,
+			publicPath: "/x/" + pluginID + "/interface/m1/summary",
+		},
+		{
+			name:       "graphql",
+			method:     http.MethodPost,
+			publicPath: "/x/" + pluginID + "/graphql",
+		},
+		{
+			name:       "root",
+			method:     http.MethodGet,
+			publicPath: "/x/" + pluginID,
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			request := &ghttp.Request{}
+			request.Request = httptest.NewRequest(testCase.method, testCase.publicPath, nil)
+			response, err := services.Runtime.DispatchDynamicRoute(
+				ctx,
+				&runtime.DynamicRouteDispatchInput{Request: request},
+			)
+			if err != nil {
+				t.Fatalf("expected dynamic route dispatch to return bridge response, got error: %v", err)
+			}
+			if response == nil || response.StatusCode != http.StatusNotImplemented {
+				t.Fatalf("expected matched placeholder route to return 501, got %#v", response)
+			}
+		})
 	}
 }
 
@@ -308,10 +399,11 @@ func TestExecuteDynamicWasmBridgeReturnsGuestResponse(t *testing.T) {
 	response, err := services.Runtime.ExecuteDynamicRoute(context.Background(), manifest, &pluginbridge.BridgeRequestEnvelopeV1{
 		PluginID: "linapro-demo-dynamic",
 		Route: &pluginbridge.RouteMatchSnapshotV1{
-			InternalPath: "/backend-summary",
-			PublicPath:   "/x/linapro-demo-dynamic/backend-summary",
+			InternalPath: "/api/v1/backend-summary",
+			PublicPath:   "/x/linapro-demo-dynamic/api/v1/backend-summary",
 			Access:       pluginbridge.AccessLogin,
 			Permission:   "linapro-demo-dynamic:backend:view",
+			RequestType:  "BackendSummaryReq",
 		},
 		Identity: &pluginbridge.IdentitySnapshotV1{
 			UserID:       1,
@@ -366,8 +458,8 @@ func TestExecuteDynamicWasmBridgeHostCallDemoUsesStructuredHostServices(t *testi
 		PluginID:  "linapro-demo-dynamic",
 		RequestID: "req-host-call-demo",
 		Route: &pluginbridge.RouteMatchSnapshotV1{
-			InternalPath: "/host-call-demo",
-			PublicPath:   "/x/linapro-demo-dynamic/host-call-demo",
+			InternalPath: "/api/v1/host-call-demo",
+			PublicPath:   "/x/linapro-demo-dynamic/api/v1/host-call-demo",
 			Access:       pluginbridge.AccessLogin,
 			Permission:   "linapro-demo-dynamic:backend:view",
 			RequestType:  "HostCallDemoReq",
@@ -463,12 +555,12 @@ func TestExecuteDynamicWasmBridgeCreatesDemoRecord(t *testing.T) {
 		RequestID: "req-demo-record-create",
 		Route: &pluginbridge.RouteMatchSnapshotV1{
 			Method:       http.MethodPost,
-			InternalPath: "/demo-records",
-			PublicPath:   "/x/linapro-demo-dynamic/demo-records",
+			InternalPath: "/api/v1/demo-records",
+			PublicPath:   "/x/linapro-demo-dynamic/api/v1/demo-records",
 			Access:       pluginbridge.AccessLogin,
 			Permission:   "linapro-demo-dynamic:record:create",
 			RequestType:  "CreateDemoRecordReq",
-			RoutePath:    "/demo-records",
+			RoutePath:    "/api/v1/demo-records",
 		},
 		Identity: &pluginbridge.IdentitySnapshotV1{
 			UserID:       1,

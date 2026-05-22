@@ -105,6 +105,15 @@ scheduler:
   # 默认调度时区；未配置时使用 UTC
   defaultTimezone: "UTC"
 
+# Admin workspace routing configuration
+# 管理工作台路由配置
+workspace:
+  # Non-root entry path for the built-in admin workspace. It is startup-scoped
+  # and must not use "/", "/api", "/x", "/x-assets", or other reserved paths.
+  # 内建管理工作台的非根入口路径。该配置在启动期生效，不能使用 "/"、"/api"、
+  # "/x"、"/x-assets" 或其他保留路径。
+  basePath: "/admin"
+
 # Internationalization configuration
 # 国际化配置
 i18n:

@@ -28,7 +28,7 @@ func TestValidateBridgeSpecRejectsTextCodec(t *testing.T) {
 func TestValidateRouteContractsRejectsInvalidPublicPermission(t *testing.T) {
 	routes := []*RouteContract{
 		{
-			Path:       "/review-summary",
+			Path:       "/api/v1/review-summary",
 			Method:     http.MethodGet,
 			Access:     AccessPublic,
 			Permission: "linapro-demo-dynamic:review:view",
@@ -39,6 +39,51 @@ func TestValidateRouteContractsRejectsInvalidPublicPermission(t *testing.T) {
 	}
 }
 
+// TestValidateRouteContractsRejectsDuplicateMethodPath verifies route method
+// and path remain the unique dynamic route identity inside one plugin.
+func TestValidateRouteContractsRejectsDuplicateMethodPath(t *testing.T) {
+	routes := []*RouteContract{
+		{
+			Path:   "/api/v1/review-summary",
+			Method: http.MethodGet,
+			Access: AccessLogin,
+		},
+		{
+			Path:   "/api/v1/review-summary",
+			Method: http.MethodGet,
+			Access: AccessLogin,
+		},
+	}
+	if err := ValidateRouteContracts("linapro-demo-dynamic", routes); err == nil {
+		t.Fatal("expected duplicate method and path to be rejected")
+	}
+}
+
+// TestValidateRouteContractsAllowsPluginOwnedPathShapes verifies dynamic route
+// contracts do not force plugin-local paths to use a host API version prefix.
+func TestValidateRouteContractsAllowsPluginOwnedPathShapes(t *testing.T) {
+	routes := []*RouteContract{
+		{
+			Path:   "/api/v2/review-summary",
+			Method: http.MethodGet,
+			Access: AccessLogin,
+		},
+		{
+			Path:   "/interface/m1/review-summary",
+			Method: http.MethodPost,
+			Access: AccessLogin,
+		},
+		{
+			Path:   "/graphql",
+			Method: http.MethodPost,
+			Access: AccessPublic,
+		},
+	}
+	if err := ValidateRouteContracts("linapro-demo-dynamic", routes); err != nil {
+		t.Fatalf("expected plugin-owned route path shapes to be accepted, got error: %v", err)
+	}
+}
+
 // TestEncodeDecodeRequestEnvelopeRoundTrip verifies the manual protobuf codec
 // preserves nested route, request, and identity snapshots.
 func TestEncodeDecodeRequestEnvelopeRoundTrip(t *testing.T) {
@@ -46,9 +91,9 @@ func TestEncodeDecodeRequestEnvelopeRoundTrip(t *testing.T) {
 		PluginID: "linapro-demo-dynamic",
 		Route: &RouteMatchSnapshotV1{
 			Method:       http.MethodGet,
-			PublicPath:   "/x/linapro-demo-dynamic/review-summary",
-			InternalPath: "/review-summary",
-			RoutePath:    "/review-summary",
+			PublicPath:   "/x/linapro-demo-dynamic/api/v1/review-summary",
+			InternalPath: "/api/v1/review-summary",
+			RoutePath:    "/api/v1/review-summary",
 			Access:       AccessLogin,
 			Permission:   "linapro-demo-dynamic:review:view",
 			RequestType:  "ReviewSummaryReq",
@@ -61,9 +106,9 @@ func TestEncodeDecodeRequestEnvelopeRoundTrip(t *testing.T) {
 		},
 		Request: &HTTPRequestSnapshotV1{
 			Method:       http.MethodGet,
-			PublicPath:   "/x/linapro-demo-dynamic/review-summary",
-			InternalPath: "/review-summary",
-			RawPath:      "/x/linapro-demo-dynamic/review-summary",
+			PublicPath:   "/x/linapro-demo-dynamic/api/v1/review-summary",
+			InternalPath: "/api/v1/review-summary",
+			RawPath:      "/x/linapro-demo-dynamic/api/v1/review-summary",
 			RawQuery:     "q=hello",
 			Host:         "localhost:9120",
 			Scheme:       "http",

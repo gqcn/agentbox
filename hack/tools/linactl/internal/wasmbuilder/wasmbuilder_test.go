@@ -66,8 +66,18 @@ func TestBuildRuntimeWasmArtifactFromSourceEmbedsDeclaredAssets(t *testing.T) {
 	)
 	mustWriteFile(
 		t,
+		filepath.Join(pluginDir, "backend", "api", "dynamic", "dynamic.go"),
+		"package dynamicapi\n",
+	)
+	mustWriteFile(
+		t,
 		filepath.Join(pluginDir, "backend", "api", "dynamic", "v1", "review_summary.go"),
 		"package v1\n\nimport \"github.com/gogf/gf/v2/frame/g\"\n\ntype ReviewSummaryReq struct {\n\tg.Meta `path:\"/review-summary\" method:\"get\" tags:\"动态插件示例\" summary:\"查询摘要\" dc:\"返回一个动态插件摘要\" access:\"login\" permission:\"plugin-dev-dynamic-builder:review:view\" operLog:\"other\"`\n}\n",
+	)
+	mustWriteFile(
+		t,
+		filepath.Join(pluginDir, "backend", "plugin.go"),
+		"package backend\n\nimport \"lina-core/pkg/pluginbridge\"\n\nfunc RegisterRoutes(registrar pluginbridge.DynamicRouteRegistrar) error {\n\treturn registrar.Group(\"/api/v1\", \"dynamic/v1\")\n}\n",
 	)
 	mustWriteFile(
 		t,
@@ -147,7 +157,7 @@ func TestBuildRuntimeWasmArtifactFromSourceEmbedsDeclaredAssets(t *testing.T) {
 	if err = json.Unmarshal(sections[pluginDynamicWasmSectionFrontend], &frontend); err != nil {
 		t.Fatalf("expected frontend section json to unmarshal, got error: %v", err)
 	}
-	if len(frontend) != 1 || frontend[0].Path != "standalone.html" {
+	if len(frontend) != 1 || frontend[0].Path != "frontend/pages/standalone.html" {
 		t.Fatalf("unexpected embedded frontend assets: %#v", frontend)
 	}
 
@@ -210,6 +220,9 @@ func TestBuildRuntimeWasmArtifactFromSourceEmbedsDeclaredAssets(t *testing.T) {
 	}
 	if len(routes) != 1 || routes[0].Permission != "plugin-dev-dynamic-builder:review:view" {
 		t.Fatalf("unexpected embedded route specs: %#v", routes)
+	}
+	if routes[0].Path != "/api/v1/review-summary" {
+		t.Fatalf("expected route group prefix to be composed into route path, got %#v", routes[0])
 	}
 	if routes[0].Meta["operLog"] != "other" {
 		t.Fatalf("expected custom route metadata to preserve operLog, got %#v", routes[0].Meta)
@@ -529,7 +542,7 @@ func TestBuildRuntimeWasmArtifactFromSourceSkipsHiddenEmbeddedDirectoryEntries(t
 	if err = json.Unmarshal(sections[pluginDynamicWasmSectionFrontend], &frontend); err != nil {
 		t.Fatalf("expected frontend section json to unmarshal, got error: %v", err)
 	}
-	if len(frontend) != 1 || frontend[0].Path != "visible.html" {
+	if len(frontend) != 1 || frontend[0].Path != "frontend/pages/visible.html" {
 		t.Fatalf("expected only visible embedded frontend asset, got %#v", frontend)
 	}
 

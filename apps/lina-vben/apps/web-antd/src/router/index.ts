@@ -6,8 +6,12 @@ import {
 
 import { resetStaticRoutes } from '@vben/utils';
 
+import { resolveWorkspaceRouterBase } from '#/runtime/public-frontend';
+
 import { createRouterGuard } from './guard';
 import { routes } from './routes';
+
+const routerBase = resolveWorkspaceRouterBase();
 
 /**
  *  @zh_CN 创建vue-router实例
@@ -15,8 +19,8 @@ import { routes } from './routes';
 const router = createRouter({
   history:
     import.meta.env.VITE_ROUTER_HISTORY === 'hash'
-      ? createWebHashHistory(import.meta.env.VITE_BASE)
-      : createWebHistory(import.meta.env.VITE_BASE),
+      ? createWebHashHistory(routerBase)
+      : createWebHistory(routerBase),
   // 应该添加到路由的初始路由列表。
   routes,
   scrollBehavior: (to, _from, savedPosition) => {

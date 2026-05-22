@@ -11,9 +11,19 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"lina-core/pkg/pluginbridge"
+)
+
+const (
+	// routeRegisterFunctionName is the dynamic backend callback inspected by the
+	// builder to mirror source-plugin route registration.
+	routeRegisterFunctionName = "RegisterRoutes"
+	// routeRegisterGroupMethodName is the registrar method used to bind a route
+	// group prefix to one backend/api-relative package.
+	routeRegisterGroupMethodName = "Group"
 )
 
 func collectHookSpecs(pluginDir string, pluginID string) ([]*hookSpec, error) {
@@ -475,8 +485,12 @@ func collectRouteContracts(pluginDir string, pluginID string) ([]*pluginbridge.R
 		return nil, fmt.Errorf("runtime backend api path is not a directory: %s", apiDir)
 	}
 
+	prefixes, err := collectRouteGroupBindings(pluginDir, apiDir)
+	if err != nil {
+		return nil, err
+	}
 	fset := token.NewFileSet()
-	contracts := make([]*pluginbridge.RouteContract, 0)
+	sources := make([]*routeContractSource, 0)
 	err = filepath.WalkDir(apiDir, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -488,15 +502,27 @@ func collectRouteContracts(pluginDir string, pluginID string) ([]*pluginbridge.R
 		if parseErr != nil {
 			return fmt.Errorf("failed to parse api file %s: %w", path, parseErr)
 		}
+		dir := filepath.Dir(path)
 		items, extractErr := extractRouteContractsFromFile(fileNode)
 		if extractErr != nil {
 			return fmt.Errorf("failed to extract route contract from %s: %w", path, extractErr)
 		}
-		contracts = append(contracts, items...)
+		sources = append(sources, &routeContractSource{
+			dir:       dir,
+			contracts: items,
+		})
 		return nil
 	})
 	if err != nil {
 		return nil, err
+	}
+	contracts := make([]*pluginbridge.RouteContract, 0)
+	for _, source := range sources {
+		routeGroupPrefix := routeGroupPrefixForDir(apiDir, source.dir, prefixes)
+		for _, contract := range source.contracts {
+			applyRouteGroupPrefix(routeGroupPrefix, contract)
+			contracts = append(contracts, contract)
+		}
 	}
 	if err = pluginbridge.ValidateRouteContracts(pluginID, contracts); err != nil {
 		return nil, err
@@ -504,10 +530,249 @@ func collectRouteContracts(pluginDir string, pluginID string) ([]*pluginbridge.R
 	return contracts, nil
 }
 
+// routeContractSource records DTO-derived route contracts before their
+// registered route group prefix has been applied.
+type routeContractSource struct {
+	// dir is the API package directory containing the DTO declarations.
+	dir string
+	// contracts are DTO-derived route contracts before group-prefix composition.
+	contracts []*pluginbridge.RouteContract
+}
+
+// collectRouteGroupBindings reads dynamic backend route registration code and
+// maps backend/api-relative packages to plugin-owned route group prefixes.
+func collectRouteGroupBindings(pluginDir string, apiDir string) (map[string]string, error) {
+	backendFile := filepath.Join(pluginDir, "backend", "plugin.go")
+	fileNode, err := parser.ParseFile(token.NewFileSet(), backendFile, nil, parser.ParseComments)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return map[string]string{}, nil
+		}
+		return nil, fmt.Errorf("failed to parse dynamic backend plugin file %s: %w", backendFile, err)
+	}
+
+	prefixes := make(map[string]string)
+	for _, decl := range fileNode.Decls {
+		funcDecl, ok := decl.(*ast.FuncDecl)
+		if !ok || funcDecl == nil || funcDecl.Name == nil || funcDecl.Name.Name != routeRegisterFunctionName {
+			continue
+		}
+		items, extractErr := extractRouteGroupBindingsFromFunc(funcDecl, collectStringConstsFromFile(fileNode))
+		if extractErr != nil {
+			return nil, fmt.Errorf("failed to extract dynamic route groups from %s: %w", backendFile, extractErr)
+		}
+		for _, item := range items {
+			dir, dirErr := routeGroupBindingDir(apiDir, item.apiPackage)
+			if dirErr != nil {
+				return nil, fmt.Errorf("invalid dynamic route group api package %q in %s: %w", item.apiPackage, backendFile, dirErr)
+			}
+			if previousPrefix, ok := prefixes[dir]; ok && previousPrefix != item.prefix {
+				return nil, fmt.Errorf("dynamic route group package %s is bound to conflicting prefixes: %s != %s", item.apiPackage, previousPrefix, item.prefix)
+			}
+			prefixes[dir] = item.prefix
+		}
+	}
+	return prefixes, nil
+}
+
+// routeGroupBinding records one registrar.Group(prefix, apiPackage) call.
+type routeGroupBinding struct {
+	// prefix is the plugin-owned route group prefix.
+	prefix string
+	// apiPackage is the backend/api-relative package path.
+	apiPackage string
+}
+
+// extractRouteGroupBindingsFromFunc extracts registrar.Group calls from one
+// dynamic RegisterRoutes function.
+func extractRouteGroupBindingsFromFunc(
+	funcDecl *ast.FuncDecl,
+	stringConsts map[string]string,
+) ([]routeGroupBinding, error) {
+	if funcDecl.Body == nil {
+		return nil, nil
+	}
+	registrarNames := routeRegistrarParamNames(funcDecl)
+	if len(registrarNames) == 0 {
+		return nil, nil
+	}
+	items := make([]routeGroupBinding, 0)
+	var firstErr error
+	ast.Inspect(funcDecl.Body, func(node ast.Node) bool {
+		if firstErr != nil {
+			return false
+		}
+		callExpr, ok := node.(*ast.CallExpr)
+		if !ok || callExpr == nil {
+			return true
+		}
+		selector, ok := callExpr.Fun.(*ast.SelectorExpr)
+		if !ok || selector == nil || selector.Sel == nil || selector.Sel.Name != routeRegisterGroupMethodName {
+			return true
+		}
+		receiver, ok := selector.X.(*ast.Ident)
+		if !ok || receiver == nil {
+			return true
+		}
+		if _, allowed := registrarNames[receiver.Name]; !allowed {
+			return true
+		}
+		if len(callExpr.Args) != 2 {
+			firstErr = fmt.Errorf("registrar Group calls must pass prefix and api package strings")
+			return false
+		}
+		prefix, err := stringArg(callExpr.Args[0], stringConsts)
+		if err != nil {
+			firstErr = fmt.Errorf("route group prefix must be a string literal or string const: %w", err)
+			return false
+		}
+		apiPackage, err := stringArg(callExpr.Args[1], stringConsts)
+		if err != nil {
+			firstErr = fmt.Errorf("route group api package must be a string literal or string const: %w", err)
+			return false
+		}
+		items = append(items, routeGroupBinding{
+			prefix:     normalizeRouteDeclarationPath(prefix),
+			apiPackage: normalizeAPIPackagePath(apiPackage),
+		})
+		return true
+	})
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	return items, nil
+}
+
+// routeRegistrarParamNames returns RegisterRoutes parameters that implement
+// the dynamic route registrar contract by type name.
+func routeRegistrarParamNames(funcDecl *ast.FuncDecl) map[string]struct{} {
+	names := make(map[string]struct{})
+	if funcDecl == nil || funcDecl.Type == nil || funcDecl.Type.Params == nil {
+		return names
+	}
+	for _, field := range funcDecl.Type.Params.List {
+		if field == nil || astTypeName(field.Type) != "DynamicRouteRegistrar" {
+			continue
+		}
+		for _, name := range field.Names {
+			if name == nil || strings.TrimSpace(name.Name) == "" {
+				continue
+			}
+			names[name.Name] = struct{}{}
+		}
+	}
+	return names
+}
+
+// collectStringConstsFromFile collects file-local string constants that route
+// registration declarations may use for group prefixes.
+func collectStringConstsFromFile(fileNode *ast.File) map[string]string {
+	values := make(map[string]string)
+	if fileNode == nil {
+		return values
+	}
+	for _, decl := range fileNode.Decls {
+		genDecl, ok := decl.(*ast.GenDecl)
+		if !ok || genDecl.Tok != token.CONST {
+			continue
+		}
+		for _, spec := range genDecl.Specs {
+			valueSpec, ok := spec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			for index, name := range valueSpec.Names {
+				if name == nil || index >= len(valueSpec.Values) {
+					continue
+				}
+				value, err := stringArg(valueSpec.Values[index], values)
+				if err != nil {
+					continue
+				}
+				values[name.Name] = value
+			}
+		}
+	}
+	return values
+}
+
+// stringArg returns the compile-time string value for one supported AST expression.
+func stringArg(expr ast.Expr, stringConsts map[string]string) (string, error) {
+	switch value := expr.(type) {
+	case *ast.BasicLit:
+		if value.Kind != token.STRING {
+			return "", fmt.Errorf("expected string literal")
+		}
+		unquoted, err := strconv.Unquote(value.Value)
+		if err != nil {
+			return "", fmt.Errorf("invalid string literal: %w", err)
+		}
+		return unquoted, nil
+	case *ast.Ident:
+		if resolved, ok := stringConsts[value.Name]; ok {
+			return resolved, nil
+		}
+		return "", fmt.Errorf("unknown string const %s", value.Name)
+	case *ast.BinaryExpr:
+		if value.Op != token.ADD {
+			return "", fmt.Errorf("only string concatenation is supported")
+		}
+		left, err := stringArg(value.X, stringConsts)
+		if err != nil {
+			return "", err
+		}
+		right, err := stringArg(value.Y, stringConsts)
+		if err != nil {
+			return "", err
+		}
+		return left + right, nil
+	default:
+		return "", fmt.Errorf("expected string literal or const")
+	}
+}
+
+// routeGroupBindingDir converts one backend/api-relative package path into an
+// absolute API package directory.
+func routeGroupBindingDir(apiDir string, apiPackage string) (string, error) {
+	if hasParentPathSegment(apiPackage) {
+		return "", fmt.Errorf("api package must stay under backend/api")
+	}
+	normalizedPackage := normalizeAPIPackagePath(apiPackage)
+	if normalizedPackage == "" || normalizedPackage == "." {
+		return filepath.Clean(apiDir), nil
+	}
+	if strings.HasPrefix(normalizedPackage, "../") || strings.Contains(normalizedPackage, "/../") {
+		return "", fmt.Errorf("api package must stay under backend/api")
+	}
+	return filepath.Clean(filepath.Join(apiDir, filepath.FromSlash(normalizedPackage))), nil
+}
+
+// hasParentPathSegment reports whether a package path attempts parent traversal.
+func hasParentPathSegment(value string) bool {
+	for _, segment := range strings.Split(filepath.ToSlash(strings.TrimSpace(value)), "/") {
+		if segment == ".." {
+			return true
+		}
+	}
+	return false
+}
+
+// normalizeAPIPackagePath canonicalizes a backend/api-relative package path.
+func normalizeAPIPackagePath(value string) string {
+	normalized := filepath.ToSlash(strings.TrimSpace(value))
+	normalized = strings.TrimPrefix(normalized, "./")
+	normalized = strings.Trim(normalized, "/")
+	if normalized == "" {
+		return "."
+	}
+	return filepath.ToSlash(filepath.Clean(normalized))
+}
+
 // routeContractTagKeys lists GoFrame route tags consumed by the dynamic route contract.
 var routeContractTagKeys = map[string]struct{}{
 	"path":        {},
 	"method":      {},
+	"operationId": {},
 	"tags":        {},
 	"summary":     {},
 	"dc":          {},
@@ -563,6 +828,59 @@ func extractRouteContractsFromFile(fileNode *ast.File) ([]*pluginbridge.RouteCon
 		}
 	}
 	return items, nil
+}
+
+// routeGroupPrefixForDir returns the closest registered route group prefix
+// declared at or above the DTO package directory.
+func routeGroupPrefixForDir(apiDir string, sourceDir string, prefixes map[string]string) string {
+	for current := filepath.Clean(sourceDir); ; current = filepath.Dir(current) {
+		if prefix, ok := prefixes[current]; ok {
+			return prefix
+		}
+		if current == filepath.Clean(apiDir) {
+			break
+		}
+		next := filepath.Dir(current)
+		if next == current {
+			break
+		}
+	}
+	return ""
+}
+
+// applyRouteGroupPrefix composes the registered group prefix with one DTO route
+// path, mirroring source-plugin `Group(prefix).Bind(controller)` routing.
+func applyRouteGroupPrefix(prefix string, contract *pluginbridge.RouteContract) {
+	if contract == nil {
+		return
+	}
+	contract.Path = joinRouteDeclarationPaths(prefix, contract.Path)
+}
+
+// joinRouteDeclarationPaths combines normalized route declaration paths.
+func joinRouteDeclarationPaths(prefix string, routePath string) string {
+	normalizedPrefix := normalizeRouteDeclarationPath(prefix)
+	normalizedRoutePath := normalizeRouteDeclarationPath(routePath)
+	if normalizedPrefix == "/" {
+		return normalizedRoutePath
+	}
+	if normalizedRoutePath == "/" {
+		return normalizedPrefix
+	}
+	return normalizedPrefix + normalizedRoutePath
+}
+
+// normalizeRouteDeclarationPath makes one route declaration path absolute and
+// stable without interpreting plugin-owned path segments.
+func normalizeRouteDeclarationPath(value string) string {
+	normalized := strings.TrimSpace(value)
+	if normalized == "" || normalized == "/" {
+		return "/"
+	}
+	if !strings.HasPrefix(normalized, "/") {
+		normalized = "/" + normalized
+	}
+	return strings.TrimRight(normalized, "/")
 }
 
 // buildRouteContractMeta preserves plugin-defined route metadata without host interpretation.

@@ -23,6 +23,17 @@ var (
 // GuestHandler defines the guest-side dynamic route handler interface.
 type GuestHandler func(*BridgeRequestEnvelopeV1) (*BridgeResponseEnvelopeV1, error)
 
+// DynamicRouteRegistrar records build-time route group bindings for dynamic
+// plugins. Implementations are owned by the dynamic plugin builder; guest
+// plugin code should expose a RegisterRoutes function that calls Group with a
+// plugin-owned route prefix and a backend/api-relative package path.
+type DynamicRouteRegistrar interface {
+	// Group binds one backend/api-relative package path to a plugin-owned route
+	// prefix. The apiPackage value uses slash-separated paths such as
+	// "dynamic/v1" and never includes the generated backend/api directory.
+	Group(prefix string, apiPackage string) error
+}
+
 // GuestRuntime exposes the guest-side request buffer and execution contract
 // published to dynamic plugin entrypoints.
 type GuestRuntime interface {

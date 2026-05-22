@@ -426,12 +426,12 @@ func TestValidatePluginManifestAcceptsRuntimePluginWithEmbeddedFrontendAssets(t 
 		"v0.2.1",
 		[]*catalog.ArtifactFrontendAsset{
 			{
-				Path:          "index.html",
+				Path:          "frontend/pages/index.html",
 				ContentBase64: base64.StdEncoding.EncodeToString([]byte("<html><body>dynamic frontend</body></html>")),
 				ContentType:   "text/html; charset=utf-8",
 			},
 			{
-				Path:          "assets/app.js",
+				Path:          "frontend/pages/assets/app.js",
 				ContentBase64: base64.StdEncoding.EncodeToString([]byte("console.log('dynamic frontend')")),
 				ContentType:   "application/javascript",
 			},
@@ -442,10 +442,11 @@ func TestValidatePluginManifestAcceptsRuntimePluginWithEmbeddedFrontendAssets(t 
 
 	manifestFile := filepath.Join(pluginDir, "plugin.yaml")
 	manifest := &catalog.Manifest{
-		ID:      "acme-demo-dynamic-frontend",
-		Name:    "Runtime Frontend Plugin",
-		Version: "v0.2.1",
-		Type:    catalog.TypeDynamic.String(),
+		ID:           "acme-demo-dynamic-frontend",
+		Name:         "Runtime Frontend Plugin",
+		Version:      "v0.2.1",
+		Type:         catalog.TypeDynamic.String(),
+		PublicAssets: []*catalog.PublicAssetSpec{{Source: "frontend/pages", Mount: "/"}},
 	}
 
 	if err := svcs.Catalog.ValidateManifest(manifest, manifestFile); err != nil {
@@ -457,8 +458,150 @@ func TestValidatePluginManifestAcceptsRuntimePluginWithEmbeddedFrontendAssets(t 
 	if len(manifest.RuntimeArtifact.FrontendAssets) != 2 {
 		t.Fatalf("expected 2 frontend assets, got %d", len(manifest.RuntimeArtifact.FrontendAssets))
 	}
-	if manifest.RuntimeArtifact.FrontendAssets[0].Path != "index.html" {
-		t.Fatalf("expected normalized frontend asset path index.html, got %s", manifest.RuntimeArtifact.FrontendAssets[0].Path)
+	if manifest.RuntimeArtifact.FrontendAssets[0].Path != "frontend/pages/index.html" {
+		t.Fatalf("expected normalized frontend asset path frontend/pages/index.html, got %s", manifest.RuntimeArtifact.FrontendAssets[0].Path)
+	}
+	if len(manifest.PublicAssets) != 1 ||
+		manifest.PublicAssets[0].Source != "frontend/pages" ||
+		manifest.PublicAssets[0].Index != "index.html" {
+		t.Fatalf("expected public_assets to remain declared, got %#v", manifest.PublicAssets)
+	}
+}
+
+// TestValidatePluginManifestTreatsPublicAssetSourceAsPublicationBoundary
+// verifies that public_assets may expose any plugin-owned directory while still
+// rejecting declarations that escape the plugin resource boundary.
+func TestValidatePluginManifestTreatsPublicAssetSourceAsPublicationBoundary(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+		want   string
+	}{
+		{name: "traversal", source: "../frontend/pages", want: "escapes"},
+		{name: "absolute", source: filepath.Join(string(filepath.Separator), "tmp"), want: "relative"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svcs := testutil.NewServices()
+			pluginDir := testutil.CreateTestPluginDir(t, "acme-demo-public-assets-invalid")
+			manifest := &catalog.Manifest{
+				ID:           "acme-demo-public-assets-invalid",
+				Name:         "Invalid Public Assets Plugin",
+				Version:      "0.1.0",
+				Type:         catalog.TypeSource.String(),
+				PublicAssets: []*catalog.PublicAssetSpec{{Source: tt.source, Mount: "/"}},
+			}
+
+			err := svcs.Catalog.ValidateManifest(manifest, filepath.Join(pluginDir, "plugin.yaml"))
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected public asset error containing %q, got %v", tt.want, err)
+			}
+		})
+	}
+
+	svcs := testutil.NewServices()
+	pluginDir := testutil.CreateTestPluginDir(t, "acme-demo-public-assets-authorized")
+	testutil.WriteTestFile(t, filepath.Join(pluginDir, "manifest", "i18n", "en-US", "messages.json"), "{}")
+	manifest := &catalog.Manifest{
+		ID:      "acme-demo-public-assets-authorized",
+		Name:    "Authorized Public Assets Plugin",
+		Version: "0.1.0",
+		Type:    catalog.TypeSource.String(),
+		PublicAssets: []*catalog.PublicAssetSpec{
+			{Source: "backend", Mount: "backend"},
+			{Source: "manifest/i18n", Mount: "i18n"},
+		},
+	}
+	if err := svcs.Catalog.ValidateManifest(manifest, filepath.Join(pluginDir, "plugin.yaml")); err != nil {
+		t.Fatalf("expected plugin-owned public asset directories to validate, got %v", err)
+	}
+}
+
+// TestValidatePluginManifestRejectsSymlinkedPublicAssetSource verifies source
+// declarations cannot escape the plugin root through symlinked directories.
+func TestValidatePluginManifestRejectsSymlinkedPublicAssetSource(t *testing.T) {
+	svcs := testutil.NewServices()
+	pluginDir := testutil.CreateTestPluginDir(t, "acme-demo-public-assets-symlink")
+	outsideDir := t.TempDir()
+	linkPath := filepath.Join(pluginDir, "frontend", "linked-public")
+	if err := os.Symlink(outsideDir, linkPath); err != nil {
+		t.Fatalf("failed to create public asset symlink fixture: %v", err)
+	}
+	manifest := &catalog.Manifest{
+		ID:           "acme-demo-public-assets-symlink",
+		Name:         "Symlink Public Assets Plugin",
+		Version:      "0.1.0",
+		Type:         catalog.TypeSource.String(),
+		PublicAssets: []*catalog.PublicAssetSpec{{Source: "frontend/linked-public", Mount: "/"}},
+	}
+
+	err := svcs.Catalog.ValidateManifest(manifest, filepath.Join(pluginDir, "plugin.yaml"))
+	if err == nil || !strings.Contains(err.Error(), "escapes") {
+		t.Fatalf("expected symlinked public asset source to be rejected, got %v", err)
+	}
+}
+
+// TestValidatePluginManifestRejectsUnsafePublicAssetIndex verifies that
+// directory defaults stay inside the declared source root.
+func TestValidatePluginManifestRejectsUnsafePublicAssetIndex(t *testing.T) {
+	tests := []struct {
+		name  string
+		index string
+		want  string
+	}{
+		{name: "traversal", index: "../index.html", want: "escapes"},
+		{name: "directory", index: "docs/", want: "file name"},
+		{name: "absolute", index: "/index.html", want: "relative"},
+		{name: "url", index: "https://example.com/index.html", want: "URL"},
+		{name: "wildcard", index: "*.html", want: "unsupported"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svcs := testutil.NewServices()
+			pluginDir := testutil.CreateTestPluginDir(t, "acme-demo-public-assets-index-invalid")
+			testutil.WriteTestFile(t, filepath.Join(pluginDir, "frontend", "public", "index.html"), "index")
+			manifest := &catalog.Manifest{
+				ID:      "acme-demo-public-assets-index-invalid",
+				Name:    "Invalid Public Assets Index Plugin",
+				Version: "0.1.0",
+				Type:    catalog.TypeSource.String(),
+				PublicAssets: []*catalog.PublicAssetSpec{
+					{Source: "frontend/public", Mount: "/", Index: tt.index},
+				},
+			}
+
+			err := svcs.Catalog.ValidateManifest(manifest, filepath.Join(pluginDir, "plugin.yaml"))
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected public asset index error containing %q, got %v", tt.want, err)
+			}
+		})
+	}
+}
+
+// TestValidatePluginManifestRejectsOverlappingPublicAssetMounts verifies that
+// ambiguous public asset URL mounts fail manifest validation.
+func TestValidatePluginManifestRejectsOverlappingPublicAssetMounts(t *testing.T) {
+	svcs := testutil.NewServices()
+	pluginDir := testutil.CreateTestPluginDir(t, "acme-demo-public-assets-overlap")
+	testutil.WriteTestFile(t, filepath.Join(pluginDir, "frontend", "public", "logo.txt"), "logo")
+	testutil.WriteTestFile(t, filepath.Join(pluginDir, "frontend", "pages", "index.txt"), "page")
+
+	manifest := &catalog.Manifest{
+		ID:      "acme-demo-public-assets-overlap",
+		Name:    "Overlapping Public Assets Plugin",
+		Version: "0.1.0",
+		Type:    catalog.TypeSource.String(),
+		PublicAssets: []*catalog.PublicAssetSpec{
+			{Source: "frontend/public", Mount: "assets"},
+			{Source: "frontend/pages", Mount: "assets/pages"},
+		},
+	}
+
+	err := svcs.Catalog.ValidateManifest(manifest, filepath.Join(pluginDir, "plugin.yaml"))
+	if err == nil || !strings.Contains(err.Error(), "overlaps") {
+		t.Fatalf("expected overlapping public asset mount error, got %v", err)
 	}
 }
 
@@ -727,6 +870,7 @@ func TestBuildPluginManifestSnapshotIncludesRuntimeArtifactMetadata(t *testing.T
 		Description:  "Runtime snapshot test plugin",
 		ManifestPath: filepath.Join(pluginDir, "plugin.yaml"),
 		RootDir:      pluginDir,
+		PublicAssets: []*catalog.PublicAssetSpec{{Source: "frontend/pages", Mount: "/"}},
 	}
 	if err := svcs.Runtime.ValidateRuntimeArtifact(manifest, pluginDir); err != nil {
 		t.Fatalf("expected dynamic artifact to be valid, got error: %v", err)
@@ -824,6 +968,7 @@ func TestBuildPluginResourceRefDescriptorsSummarizeRuntimeArtifact(t *testing.T)
 		Type:         catalog.TypeDynamic.String(),
 		ManifestPath: filepath.Join(pluginDir, "plugin.yaml"),
 		RootDir:      pluginDir,
+		PublicAssets: []*catalog.PublicAssetSpec{{Source: "frontend/pages", Mount: "/"}},
 	}
 	if err := svcs.Runtime.ValidateRuntimeArtifact(manifest, pluginDir); err != nil {
 		t.Fatalf("expected dynamic artifact to be valid, got error: %v", err)
@@ -872,6 +1017,7 @@ func TestResolvePluginSQLAssetsPrefersEmbeddedRuntimeSQL(t *testing.T) {
 		Type:         catalog.TypeDynamic.String(),
 		ManifestPath: filepath.Join(pluginDir, "plugin.yaml"),
 		RootDir:      pluginDir,
+		PublicAssets: []*catalog.PublicAssetSpec{{Source: "frontend/pages", Mount: "/"}},
 	}
 	if err := svcs.Runtime.ValidateRuntimeArtifact(manifest, pluginDir); err != nil {
 		t.Fatalf("expected dynamic artifact to be valid, got error: %v", err)

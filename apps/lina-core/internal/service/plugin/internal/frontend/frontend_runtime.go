@@ -1,10 +1,16 @@
-// This file implements runtime frontend bundle prewarming, serving, and
-// invalidation operations for enabled dynamic plugins.
+// This file implements runtime frontend bundle prewarming, declared public
+// asset serving, and invalidation operations for enabled plugins.
 
 package frontend
 
 import (
 	"context"
+	"io/fs"
+	"mime"
+	"net/http"
+	"os"
+	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/gogf/gf/v2/errors/gerror"
@@ -12,6 +18,8 @@ import (
 	"lina-core/internal/model/entity"
 	"lina-core/internal/service/plugin/internal/catalog"
 	"lina-core/pkg/logger"
+	"lina-core/pkg/pluginfs"
+	"lina-core/pkg/pluginhost"
 )
 
 // PrewarmRuntimeFrontendBundles rebuilds in-memory frontend bundles for all enabled
@@ -45,7 +53,7 @@ func (s *serviceImpl) PrewarmRuntimeFrontendBundles(ctx context.Context) error {
 			)
 			continue
 		}
-		if manifest.RuntimeArtifact == nil || len(manifest.RuntimeArtifact.FrontendAssets) == 0 {
+		if manifest.RuntimeArtifact == nil || len(manifest.PublicAssets) == 0 || len(manifest.RuntimeArtifact.FrontendAssets) == 0 {
 			s.InvalidateBundle(ctx, manifest.ID, "no_embedded_frontend_assets")
 			continue
 		}
@@ -68,61 +76,55 @@ func (s *serviceImpl) PrewarmRuntimeFrontendBundles(ctx context.Context) error {
 	return nil
 }
 
-// ResolveRuntimeFrontendAsset resolves one enabled dynamic plugin frontend asset for public serving.
+// ResolveRuntimeFrontendAsset resolves one declared public asset for public serving.
 func (s *serviceImpl) ResolveRuntimeFrontendAsset(
 	ctx context.Context,
 	pluginID string,
 	version string,
 	relativePath string,
 ) (*RuntimeFrontendAssetOutput, error) {
-	registry, err := s.catalogSvc.GetRegistry(ctx, pluginID)
-	if err != nil {
-		return nil, err
-	}
-	if registry == nil || registry.Installed != catalog.InstalledYes || registry.Status != catalog.StatusEnabled {
-		return nil, gerror.New("current dynamic plugin is not enabled")
-	}
-
 	if strings.TrimSpace(version) == "" {
-		return nil, gerror.New("current dynamic plugin version does not exist or has switched")
+		return nil, gerror.New("current plugin version does not exist or has switched")
 	}
-	release, err := s.catalogSvc.GetRelease(ctx, pluginID, version)
+	manifest, err := s.resolvePublicAssetManifest(ctx, pluginID, version)
 	if err != nil {
 		return nil, err
 	}
-	if release == nil {
-		return nil, gerror.New("current dynamic plugin version does not exist or has switched")
+	if manifest == nil {
+		return nil, gerror.New("current plugin manifest does not exist")
 	}
-	if !isReleaseServable(release) {
-		return nil, gerror.New("current dynamic plugin version does not exist or has switched")
+	if strings.TrimSpace(manifest.Version) != strings.TrimSpace(version) {
+		return nil, gerror.New("current plugin version does not exist or has switched")
 	}
-
-	manifest, err := s.catalogSvc.LoadReleaseManifest(ctx, release)
-	if err != nil {
-		return nil, err
+	if len(manifest.PublicAssets) == 0 {
+		return nil, gerror.New("current plugin does not declare public assets")
 	}
-	if catalog.NormalizeType(manifest.Type) != catalog.TypeDynamic {
-		return nil, gerror.New("current plugin is not dynamic")
+	if catalog.NormalizeType(manifest.Type) == catalog.TypeSource {
+		return s.resolveSourcePublicAsset(ctx, manifest, relativePath)
 	}
 	if manifest.RuntimeArtifact == nil || len(manifest.RuntimeArtifact.FrontendAssets) == 0 {
 		return nil, gerror.New("current dynamic plugin does not declare frontend assets")
 	}
 
+	resolvedAssetPath, err := resolvePublicAssetDeclaration(manifest.PublicAssets, relativePath)
+	if err != nil {
+		return nil, err
+	}
 	bundle, err := s.ensureBundle(ctx, manifest)
 	if err != nil {
 		return nil, err
 	}
 
-	content, contentType, err := bundle.ReadAsset(relativePath)
+	content, contentType, err := bundle.ReadAsset(resolvedAssetPath)
 	if err != nil {
 		return nil, err
 	}
 	logger.Debugf(
 		ctx,
-		"runtime frontend asset resolved plugin=%s version=%s path=%s contentType=%s",
+		"plugin public asset resolved plugin=%s version=%s path=%s contentType=%s",
 		pluginID,
 		version,
-		strings.TrimSpace(relativePath),
+		resolvedAssetPath,
 		contentType,
 	)
 	return &RuntimeFrontendAssetOutput{
@@ -131,9 +133,9 @@ func (s *serviceImpl) ResolveRuntimeFrontendAsset(
 	}, nil
 }
 
-// BuildRuntimeFrontendPublicBaseURL returns the stable public base URL for runtime plugin assets.
+// BuildRuntimeFrontendPublicBaseURL returns the stable public base URL for plugin public assets.
 func (s *serviceImpl) BuildRuntimeFrontendPublicBaseURL(pluginID string, version string) string {
-	return "/plugin-assets/" + strings.TrimSpace(pluginID) + "/" + strings.TrimSpace(version) + "/"
+	return pluginhost.HostedAssetURLPrefix + strings.TrimSpace(pluginID) + "/" + strings.TrimSpace(version) + "/"
 }
 
 // InvalidateBundle removes all cached bundle entries for the given plugin ID.
@@ -181,7 +183,35 @@ func (s *serviceImpl) loadActiveDynamicPluginManifest(ctx context.Context, regis
 	return s.catalogSvc.LoadReleaseManifest(ctx, release)
 }
 
-// isReleaseServable reports whether a release row is in a state that allows frontend serving.
+// resolvePublicAssetManifest loads the manifest that owns a requested
+// /x-assets plugin version. Dynamic plugins may serve previously installed
+// releases while the plugin remains enabled; source plugins use the active
+// discovered manifest because they are compiled into the host.
+func (s *serviceImpl) resolvePublicAssetManifest(ctx context.Context, pluginID string, version string) (*catalog.Manifest, error) {
+	registry, err := s.catalogSvc.GetRegistry(ctx, pluginID)
+	if err != nil {
+		return nil, err
+	}
+	if registry != nil && catalog.NormalizeType(registry.Type) == catalog.TypeDynamic {
+		release, releaseErr := s.catalogSvc.GetRelease(ctx, pluginID, version)
+		if releaseErr != nil {
+			return nil, releaseErr
+		}
+		if release == nil || !isReleaseServable(release) {
+			return nil, gerror.New("current dynamic plugin version does not exist or has switched")
+		}
+		return s.catalogSvc.LoadReleaseManifest(ctx, release)
+	}
+
+	manifest, err := s.catalogSvc.GetDesiredManifest(pluginID)
+	if err != nil {
+		return nil, err
+	}
+	return manifest, nil
+}
+
+// isReleaseServable reports whether a release row is in a state that allows
+// versioned public asset serving.
 func isReleaseServable(release *entity.SysPluginRelease) bool {
 	if release == nil {
 		return false
@@ -192,4 +222,106 @@ func isReleaseServable(release *entity.SysPluginRelease) bool {
 	default:
 		return false
 	}
+}
+
+// resolveSourcePublicAsset reads one declared source-plugin asset from the
+// plugin embedded filesystem or filesystem root.
+func (s *serviceImpl) resolveSourcePublicAsset(
+	ctx context.Context,
+	manifest *catalog.Manifest,
+	relativePath string,
+) (*RuntimeFrontendAssetOutput, error) {
+	resolvedAssetPath, err := resolvePublicAssetDeclaration(manifest.PublicAssets, relativePath)
+	if err != nil {
+		return nil, err
+	}
+	var content []byte
+	if embeddedFiles := catalog.GetSourcePluginEmbeddedFiles(manifest); embeddedFiles != nil {
+		if err = pluginfs.ValidateNoSymlinkPathFromFS(embeddedFiles, resolvedAssetPath); err == nil {
+			content, err = fs.ReadFile(embeddedFiles, resolvedAssetPath)
+		}
+	} else {
+		var fullPath string
+		fullPath, err = pluginfs.ResolveResourcePath(manifest.RootDir, resolvedAssetPath)
+		if err == nil {
+			content, err = os.ReadFile(fullPath)
+		}
+	}
+	if err != nil {
+		return nil, gerror.Wrapf(err, "source plugin public asset does not exist: %s", resolvedAssetPath)
+	}
+	contentType := mime.TypeByExtension(filepath.Ext(resolvedAssetPath))
+	if contentType == "" {
+		contentType = http.DetectContentType(content)
+	}
+	logger.Debugf(ctx, "source plugin public asset resolved plugin=%s version=%s path=%s contentType=%s", manifest.ID, manifest.Version, resolvedAssetPath, contentType)
+	return &RuntimeFrontendAssetOutput{
+		Content:     content,
+		ContentType: contentType,
+	}, nil
+}
+
+// resolvePublicAssetDeclaration maps one /x-assets relative request path to a
+// declared plugin asset path and rejects undeclared resources.
+func resolvePublicAssetDeclaration(declarations []*catalog.PublicAssetSpec, requestPath string) (string, error) {
+	normalizedRequestPath, ok := normalizePublicAssetRequestPath(requestPath)
+	if !ok {
+		return "", gerror.Newf("plugin public asset path is invalid: %s", requestPath)
+	}
+	for _, declaration := range declarations {
+		if declaration == nil {
+			continue
+		}
+		mount, mountOK := normalizePublicAssetRequestPath(declaration.Mount)
+		source, sourceOK := normalizePublicAssetRequestPath(declaration.Source)
+		if !mountOK || !sourceOK {
+			continue
+		}
+		mount = strings.Trim(mount, "/")
+		source = strings.Trim(source, "/")
+		if source == "" {
+			continue
+		}
+		if mount != "" && normalizedRequestPath != mount && !strings.HasPrefix(normalizedRequestPath, mount+"/") {
+			continue
+		}
+		assetSuffix := normalizedRequestPath
+		if mount != "" {
+			assetSuffix = strings.TrimPrefix(normalizedRequestPath, mount)
+			assetSuffix = strings.TrimPrefix(assetSuffix, "/")
+		}
+		if assetSuffix == "" {
+			assetSuffix = publicAssetIndexFile(declaration)
+		}
+		resolvedPath := path.Join(source, assetSuffix)
+		if resolvedPath != source && !strings.HasPrefix(resolvedPath, source+"/") {
+			return "", gerror.Newf("plugin public asset is outside declared source: %s", requestPath)
+		}
+		return resolvedPath, nil
+	}
+	return "", gerror.Newf("plugin public asset is not declared: %s", requestPath)
+}
+
+// publicAssetIndexFile returns the declaration-specific directory index file.
+func publicAssetIndexFile(declaration *catalog.PublicAssetSpec) string {
+	if declaration == nil || strings.TrimSpace(declaration.Index) == "" {
+		return catalog.DefaultPublicAssetIndex()
+	}
+	return strings.TrimSpace(declaration.Index)
+}
+
+// normalizePublicAssetRequestPath normalizes a browser-facing relative asset
+// path while preventing traversal outside the public asset namespace.
+func normalizePublicAssetRequestPath(value string) (string, bool) {
+	normalized := strings.ReplaceAll(strings.TrimSpace(value), "\\", "/")
+	normalized = strings.TrimPrefix(normalized, "/")
+	normalized = strings.TrimPrefix(normalized, "./")
+	normalized = path.Clean(normalized)
+	if normalized == "." || normalized == ".." || strings.HasPrefix(normalized, "../") {
+		if strings.TrimSpace(value) == "" || strings.TrimSpace(value) == "/" || strings.TrimSpace(value) == "." {
+			return "", true
+		}
+		return "", false
+	}
+	return strings.Trim(normalized, "/"), true
 }

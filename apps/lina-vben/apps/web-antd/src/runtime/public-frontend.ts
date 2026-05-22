@@ -54,12 +54,17 @@ interface PublicFrontendCronSettings {
   timezone: PublicFrontendCronTimezoneSettings;
 }
 
+interface PublicFrontendWorkspaceSettings {
+  basePath: string;
+}
+
 interface PublicFrontendSettings {
   app: PublicFrontendAppSettings;
   auth: PublicFrontendAuthSettings;
   cron: PublicFrontendCronSettings;
   user: PublicFrontendUserSettings;
   ui: PublicFrontendUISettings;
+  workspace: PublicFrontendWorkspaceSettings;
 }
 
 const publicFrontendFetchInit: RequestInit = {
@@ -107,6 +112,9 @@ const publicFrontendState = reactive<PublicFrontendSettings>({
     watermarkContent: '',
     watermarkEnabled: false,
   },
+  workspace: {
+    basePath: '/admin',
+  },
 });
 
 function normalizeString(value: unknown): string {
@@ -132,6 +140,38 @@ function normalizeAuthPanelLayout(value: unknown): AuthPageLayoutType {
     default:
       return 'panel-right';
   }
+}
+
+function normalizeWorkspaceBasePath(value: unknown): string {
+  const normalized = normalizeString(value)
+    .replaceAll('\\', '/')
+    .replace(/\/+/g, '/')
+    .replace(/\/+$/, '');
+  if (
+    !normalized ||
+    normalized === '/' ||
+    normalized.includes('*') ||
+    normalized.includes('?') ||
+    normalized.includes('#') ||
+    normalized.includes('://') ||
+    !normalized.startsWith('/')
+  ) {
+    return '/admin';
+  }
+
+  const reservedPrefixes = ['/api', '/api/v1', '/x', '/x-assets', '/plugin-assets'];
+  if (
+    reservedPrefixes.some(
+      (prefix) => normalized === prefix || normalized.startsWith(`${prefix}/`),
+    )
+  ) {
+    return '/admin';
+  }
+  return normalized;
+}
+
+function resolveWorkspaceRouterBase() {
+  return `${normalizeWorkspaceBasePath(publicFrontendState.workspace.basePath)}/`;
 }
 
 function resolvePublicFrontendEndpoint(): string {
@@ -172,6 +212,7 @@ function normalizePublicFrontendSettings(payload: any): PublicFrontendSettings {
   const timezone = cron?.timezone ?? {};
   const user = payload?.user ?? {};
   const ui = payload?.ui ?? {};
+  const workspace = payload?.workspace ?? {};
 
   return {
     app: {
@@ -205,6 +246,9 @@ function normalizePublicFrontendSettings(payload: any): PublicFrontendSettings {
       themeMode: normalizeString(ui.themeMode),
       watermarkContent: normalizeString(ui.watermarkContent),
       watermarkEnabled: normalizeBoolean(ui.watermarkEnabled),
+    },
+    workspace: {
+      basePath: normalizeWorkspaceBasePath(workspace.basePath),
     },
   };
 }
@@ -270,6 +314,7 @@ async function syncPublicFrontendSettings(locale?: string) {
     Object.assign(publicFrontendState.cron.timezone, settings.cron.timezone);
     Object.assign(publicFrontendState.user, settings.user);
     Object.assign(publicFrontendState.ui, settings.ui);
+    Object.assign(publicFrontendState.workspace, settings.workspace);
     applyPublicFrontendPreferences(settings);
 
     return settings;
@@ -278,6 +323,6 @@ async function syncPublicFrontendSettings(locale?: string) {
   }
 }
 
-export { syncPublicFrontendSettings };
+export { normalizeWorkspaceBasePath, resolveWorkspaceRouterBase, syncPublicFrontendSettings };
 export const publicFrontendSettings = readonly(publicFrontendState);
-export type { PublicFrontendSettings };
+export type { PublicFrontendSettings, PublicFrontendWorkspaceSettings };

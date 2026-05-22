@@ -1,5 +1,6 @@
 import { Page, Locator, expect } from "@playwright/test";
 
+import { workspacePath } from "../fixtures/config";
 import { waitForUploadReady } from "../support/ui";
 
 const pluginManageMenuPattern = /插件管理|Plugin Management/iu;
@@ -971,7 +972,7 @@ export class PluginPage {
   }
 
   async gotoWorkspace() {
-    await this.page.goto("/dashboard/workspace");
+    await this.page.goto(workspacePath("/dashboard/workspace"));
     await expect(
       this.page.getByTestId("dashboard-workspace-page"),
     ).toBeVisible();

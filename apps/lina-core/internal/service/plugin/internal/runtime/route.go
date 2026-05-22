@@ -27,10 +27,8 @@ import (
 	"lina-core/pkg/logger"
 	bridgecodec "lina-core/pkg/pluginbridge/codec"
 	bridgecontract "lina-core/pkg/pluginbridge/contract"
+	"lina-core/pkg/pluginhost"
 )
-
-// RoutePublicPrefix is the host URL prefix for dynamic plugin routes.
-const RoutePublicPrefix = "/x"
 
 // Request-context keys and sentinel values used by the dynamic route pipeline.
 const (
@@ -248,13 +246,14 @@ func (s *serviceImpl) DispatchDynamicRoute(
 }
 
 // matchDynamicRoute resolves `/x/{pluginId}/...` public paths to the
-// plugin-declared internal route contract.
+// plugin-declared internal route contract. The host owns only the `/x/{pluginId}`
+// prefix; every following segment is plugin-defined route content.
 func (s *serviceImpl) matchDynamicRoute(ctx context.Context, request *ghttp.Request) (*dynamicRouteMatch, error) {
 	publicPath := strings.TrimSpace(request.URL.Path)
-	if !strings.HasPrefix(publicPath, RoutePublicPrefix+"/") {
+	if !strings.HasPrefix(publicPath, pluginhost.PluginAPINamespacePrefix+"/") {
 		return nil, nil
 	}
-	pathSuffix := strings.TrimPrefix(publicPath, RoutePublicPrefix+"/")
+	pathSuffix := strings.TrimPrefix(publicPath, pluginhost.PluginAPINamespacePrefix+"/")
 	segments := strings.Split(pathSuffix, "/")
 	if len(segments) == 0 || strings.TrimSpace(segments[0]) == "" {
 		return nil, gerror.New("dynamic plugin path is missing pluginId")
@@ -263,9 +262,6 @@ func (s *serviceImpl) matchDynamicRoute(ctx context.Context, request *ghttp.Requ
 	internalPath := "/"
 	if len(segments) > 1 {
 		internalPath = "/" + strings.Join(segments[1:], "/")
-	}
-	if internalPath == "/" && strings.HasSuffix(publicPath, "/") {
-		internalPath = "/"
 	}
 
 	manifest, err := s.catalogSvc.GetActiveManifest(ctx, pluginID)
@@ -392,7 +388,7 @@ func (s *serviceImpl) prepareDynamicRouteRuntime(
 			message,
 		), nil
 	}
-	if s.menuFilter != nil && !s.menuFilter.IsEnabled(ctx, match.PluginID) {
+	if s.menuFilter != nil && !s.menuFilter.CanExposeBusinessEntries(ctx, match.PluginID) {
 		return nil, bridgecodec.NewNotFoundResponse("Dynamic plugin is not enabled"), nil
 	}
 	return &dynamicRouteRuntimeState{

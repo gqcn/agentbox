@@ -1,6 +1,6 @@
-// This file validates how dynamic plugin menus consume hosted frontend assets.
-// The host serves these assets from WASM-backed in-memory bundles, and enable-time
-// validation prevents broken runtime menus from entering the router.
+// This file validates how dynamic plugin menus consume hosted public assets.
+// The host only serves assets declared by plugin.yaml public_assets, and
+// enable-time validation prevents broken runtime menus from entering the router.
 
 package frontend
 
@@ -16,29 +16,18 @@ import (
 	"lina-core/internal/dao"
 	"lina-core/internal/model/entity"
 	"lina-core/internal/service/plugin/internal/catalog"
+	"lina-core/pkg/pluginhost"
 )
 
-// Hosted-menu validation constants keep the runtime frontend contract explicit
-// between plugin menu declarations and host-served asset URLs.
 const (
-	// hostedAssetURLPrefix is the public URL prefix for all plugin-hosted assets.
-	hostedAssetURLPrefix = "/plugin-assets/"
-	// dynamicPageComponentPath is the frontend component used for embedded-mount plugin pages.
-	dynamicPageComponentPath = "system/plugin/dynamic-page"
-	// DynamicPageComponentPath is the exported form of dynamicPageComponentPath for cross-package access.
-	DynamicPageComponentPath = dynamicPageComponentPath
-	// menuQueryKeyAccessMode is the query parameter key that controls plugin page access mode.
-	menuQueryKeyAccessMode = "pluginAccessMode"
-	// accessModeEmbedded is the access mode for ESM-mounted plugin pages.
-	accessModeEmbedded = "embedded-mount"
 	// embeddedJSExtension is the allowed ESM entry extension.
 	embeddedJSExtension = ".js"
 	// embeddedMJSExtension is the allowed ESM module entry extension.
 	embeddedMJSExtension = ".mjs"
 )
 
-// ValidateRuntimeFrontendMenuBindings verifies that dynamic plugin menus only reference
-// hosted assets that exist in the plugin's in-memory bundle.
+// ValidateRuntimeFrontendMenuBindings verifies that dynamic plugin menus only
+// reference declared public assets that exist in the plugin's in-memory bundle.
 func (s *serviceImpl) ValidateRuntimeFrontendMenuBindings(ctx context.Context, manifest *catalog.Manifest) error {
 	if manifest == nil || catalog.NormalizeType(manifest.Type) != catalog.TypeDynamic {
 		return nil
@@ -69,8 +58,8 @@ func (s *serviceImpl) listPluginOwnedMenus(ctx context.Context, pluginID string)
 	return menus, nil
 }
 
-// validateHostedMenuBindings enforces that plugin menus only point at hosted
-// runtime assets that exist and satisfy the embedded-mount contract.
+// validateHostedMenuBindings enforces that plugin menus only point at declared
+// hosted public assets that exist and satisfy the embedded-mount contract.
 func (s *serviceImpl) validateHostedMenuBindings(ctx context.Context, manifest *catalog.Manifest, menus []*entity.SysMenu) error {
 	if manifest == nil || manifest.RuntimeArtifact == nil || len(menus) == 0 {
 		return nil
@@ -96,10 +85,14 @@ func (s *serviceImpl) validateHostedMenuBindings(ctx context.Context, manifest *
 				return wrapMenuValidationError(menu, err)
 			}
 		}
-		if !b.HasAsset(relativeAssetPath) {
+		resolvedAssetPath, assetErr := resolvePublicAssetDeclaration(manifest.PublicAssets, relativeAssetPath)
+		if assetErr != nil {
+			return wrapMenuValidationError(menu, assetErr)
+		}
+		if !b.HasAsset(resolvedAssetPath) {
 			return wrapMenuValidationError(
 				menu,
-				gerror.Newf("menu references missing runtime frontend asset: %s", relativeAssetPath),
+				gerror.Newf("menu references missing runtime public asset: %s", resolvedAssetPath),
 			)
 		}
 
@@ -114,14 +107,14 @@ func (s *serviceImpl) validateHostedMenuBindings(ctx context.Context, manifest *
 	return nil
 }
 
-// resolveHostedMenuAssetPath extracts the bundle-relative asset path when a
-// menu points at one host-served runtime frontend asset.
+// resolveHostedMenuAssetPath extracts the public URL-relative asset path when
+// a menu points at one host-served plugin public asset.
 func (s *serviceImpl) resolveHostedMenuAssetPath(
 	manifest *catalog.Manifest,
 	menuPath string,
 ) (string, bool, error) {
 	normalizedPath := normalizeHostedMenuPath(menuPath)
-	if !strings.HasPrefix(normalizedPath, hostedAssetURLPrefix) {
+	if !strings.HasPrefix(normalizedPath, pluginhost.HostedAssetURLPrefix) {
 		return "", false, nil
 	}
 
@@ -134,9 +127,6 @@ func (s *serviceImpl) resolveHostedMenuAssetPath(
 	}
 
 	relativeAssetPath := strings.TrimPrefix(normalizedPath, expectedPrefix)
-	if strings.TrimSpace(relativeAssetPath) == "" {
-		relativeAssetPath = "index.html"
-	}
 	return NormalizeAssetPath(relativeAssetPath), true, nil
 }
 
@@ -196,12 +186,12 @@ func validateHostedMenuMode(
 	relativeAssetPath string,
 ) error {
 	componentPath := strings.TrimSpace(menu.Component)
-	accessMode := strings.TrimSpace(queryParams[menuQueryKeyAccessMode])
-	isEmbeddedComponent := componentPath == dynamicPageComponentPath
+	accessMode := strings.TrimSpace(queryParams[pluginhost.DynamicAccessModeQueryKey])
+	isEmbeddedComponent := componentPath == pluginhost.DynamicPageComponentPath
 
-	if accessMode == accessModeEmbedded {
+	if accessMode == pluginhost.DynamicAccessModeEmbeddedMount {
 		if !isEmbeddedComponent {
-			return gerror.Newf("host embedded mount menus must use component %s", dynamicPageComponentPath)
+			return gerror.Newf("host embedded mount menus must use component %s", pluginhost.DynamicPageComponentPath)
 		}
 		if menu.IsFrame != 0 {
 			return gerror.New("host embedded mount menus cannot be declared as external links")
@@ -216,9 +206,9 @@ func validateHostedMenuMode(
 	if isEmbeddedComponent {
 		return gerror.Newf(
 			"hosted asset menus using component %s must declare query_param.%s=%s",
-			dynamicPageComponentPath,
-			menuQueryKeyAccessMode,
-			accessModeEmbedded,
+			pluginhost.DynamicPageComponentPath,
+			pluginhost.DynamicAccessModeQueryKey,
+			pluginhost.DynamicAccessModeEmbeddedMount,
 		)
 	}
 	return nil

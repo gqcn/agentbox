@@ -514,7 +514,7 @@ hostServices:
 import "github.com/gogf/gf/v2/frame/g"
 
 type LowPriorityHostServicesReq struct {
-	g.Meta \`path:"/low-priority-host-services" method:"get" tags:"动态插件 E2E" summary:"低优先级 host service 演示" dc:"验证 cache、lock、notify 三类低优先级宿主服务在动态插件路由内的成功调用" access:"login" permission:"${successPluginID}:host:view" operLog:"other"\`
+	g.Meta \`path:"/api/v1/low-priority-host-services" method:"get" tags:"动态插件 E2E" summary:"低优先级 host service 演示" dc:"验证 cache、lock、notify 三类低优先级宿主服务在动态插件路由内的成功调用" access:"login" permission:"${successPluginID}:host:view" operLog:"other"\`
 }
 `,
   );
@@ -698,15 +698,15 @@ hostServices:
 import "github.com/gogf/gf/v2/frame/g"
 
 type CacheLimitReq struct {
-	g.Meta \`path:"/cache-limit" method:"get" tags:"动态插件 E2E" summary:"缓存长度超限" dc:"验证 cache host service 在超过字段字节上限时会被宿主拒绝" access:"login" permission:"${deniedPluginID}:host:view" operLog:"other"\`
+	g.Meta \`path:"/api/v1/cache-limit" method:"get" tags:"动态插件 E2E" summary:"缓存长度超限" dc:"验证 cache host service 在超过字段字节上限时会被宿主拒绝" access:"login" permission:"${deniedPluginID}:host:view" operLog:"other"\`
 }
 
 type LockDeniedReq struct {
-	g.Meta \`path:"/lock-denied" method:"get" tags:"动态插件 E2E" summary:"未授权锁资源" dc:"验证 lock host service 调用未授权逻辑锁名时会被宿主拒绝" access:"login" permission:"${deniedPluginID}:host:view" operLog:"other"\`
+	g.Meta \`path:"/api/v1/lock-denied" method:"get" tags:"动态插件 E2E" summary:"未授权锁资源" dc:"验证 lock host service 调用未授权逻辑锁名时会被宿主拒绝" access:"login" permission:"${deniedPluginID}:host:view" operLog:"other"\`
 }
 
 type NotifyDeniedReq struct {
-	g.Meta \`path:"/notify-denied" method:"get" tags:"动态插件 E2E" summary:"未授权通知通道" dc:"验证 notify host service 调用未授权通知通道时会被宿主拒绝" access:"login" permission:"${deniedPluginID}:host:view" operLog:"other"\`
+	g.Meta \`path:"/api/v1/notify-denied" method:"get" tags:"动态插件 E2E" summary:"未授权通知通道" dc:"验证 notify host service 调用未授权通知通道时会被宿主拒绝" access:"login" permission:"${deniedPluginID}:host:view" operLog:"other"\`
 }
 `,
   );
@@ -887,7 +887,7 @@ test.describe("TC-1 Runtime Wasm Low Priority Host Services", () => {
     expect(unreadBefore).toBe(0);
 
     const response = await adminApi!.get(
-      `/x/${successPluginID}/low-priority-host-services`,
+      `/x//api/v1/low-priority-host-services`,
     );
     const responseText = await response.text();
     expect(
@@ -929,7 +929,7 @@ test.describe("TC-1 Runtime Wasm Low Priority Host Services", () => {
     await setPluginEnabled(adminApi!, deniedPluginID, true);
 
     const cacheLimitResponse = await adminApi!.get(
-      `/x/${deniedPluginID}/cache-limit`,
+      `/x//api/v1/cache-limit`,
     );
     expect(cacheLimitResponse.status()).toBe(500);
     await expectApiFailure(
@@ -939,7 +939,7 @@ test.describe("TC-1 Runtime Wasm Low Priority Host Services", () => {
     );
 
     const lockDeniedResponse = await adminApi!.get(
-      `/x/${deniedPluginID}/lock-denied`,
+      `/x//api/v1/lock-denied`,
     );
     expect(lockDeniedResponse.status()).toBe(500);
     await expectApiFailure(
@@ -949,7 +949,7 @@ test.describe("TC-1 Runtime Wasm Low Priority Host Services", () => {
     );
 
     const notifyDeniedResponse = await adminApi!.get(
-      `/x/${deniedPluginID}/notify-denied`,
+      `/x//api/v1/notify-denied`,
     );
     expect(notifyDeniedResponse.status()).toBe(500);
     await expectApiFailure(

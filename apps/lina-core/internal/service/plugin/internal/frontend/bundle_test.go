@@ -31,12 +31,12 @@ func TestEnsureBundleReaderReadsEmbeddedAssetsWithoutExtraction(t *testing.T) {
 		"v0.4.0",
 		[]*catalog.ArtifactFrontendAsset{
 			{
-				Path:          "index.html",
+				Path:          "frontend/pages/index.html",
 				ContentBase64: base64.StdEncoding.EncodeToString([]byte("<html><body>bundle asset</body></html>")),
 				ContentType:   "text/html; charset=utf-8",
 			},
 			{
-				Path:          "assets/app.js",
+				Path:          "frontend/pages/assets/app.js",
 				ContentBase64: base64.StdEncoding.EncodeToString([]byte("console.log('bundle asset');")),
 				ContentType:   "application/javascript",
 			},
@@ -62,7 +62,7 @@ func TestEnsureBundleReaderReadsEmbeddedAssetsWithoutExtraction(t *testing.T) {
 		t.Fatalf("expected dynamic frontend bundle to load, got error: %v", err)
 	}
 
-	indexContent, contentType, err := bundle.ReadAsset("")
+	indexContent, contentType, err := bundle.ReadAsset("frontend/pages/index.html")
 	if err != nil {
 		t.Fatalf("expected bundle root asset to resolve, got error: %v", err)
 	}

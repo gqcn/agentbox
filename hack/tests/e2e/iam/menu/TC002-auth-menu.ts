@@ -3,7 +3,7 @@ import { request as playwrightRequest } from "@playwright/test";
 import { LoginPage } from "../../../pages/LoginPage";
 import { test, expect } from "../../../fixtures/auth";
 import { MainLayout } from "../../../pages/MainLayout";
-import { config } from "../../../fixtures/config";
+import { config, workspacePath } from "../../../fixtures/config";
 import { waitForRouteReady } from "../../../support/ui";
 import { getMenuIdsByPermsWithAncestors } from "../../../support/api/job";
 
@@ -430,7 +430,7 @@ test.describe("TC002 登录后菜单显示", () => {
     const testLogin = new LoginPage(testPage);
     await testLogin.goto();
     await testLogin.loginAndWaitForRedirect(testUserUsername, testUserPassword);
-    await testPage.goto("/system/user");
+    await testPage.goto(workspacePath("/system/user"));
     const sidebarMenu = await waitForSidebarMenu(testPage, ["角色管理"]);
 
     const roleManagement = sidebarMenu.getByText("角色管理").first();

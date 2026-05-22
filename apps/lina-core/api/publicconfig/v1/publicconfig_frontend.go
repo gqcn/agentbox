@@ -67,11 +67,12 @@ type FrontendReq struct {
 
 // FrontendRes defines the public frontend config response.
 type FrontendRes struct {
-	App  FrontendAppRes  `json:"app" dc:"Apply brand display configuration" eg:"{}"`
-	Auth FrontendAuthRes `json:"auth" dc:"Login page display configuration" eg:"{}"`
-	User FrontendUserRes `json:"user" dc:"User display configuration" eg:"{}"`
-	UI   FrontendUIRes   `json:"ui" dc:"UI style configuration" eg:"{}"`
-	Cron FrontendCronRes `json:"cron" dc:"Scheduled job frontend capability configuration" eg:"{}"`
+	App       FrontendAppRes       `json:"app" dc:"Apply brand display configuration" eg:"{}"`
+	Auth      FrontendAuthRes      `json:"auth" dc:"Login page display configuration" eg:"{}"`
+	User      FrontendUserRes      `json:"user" dc:"User display configuration" eg:"{}"`
+	UI        FrontendUIRes        `json:"ui" dc:"UI style configuration" eg:"{}"`
+	Cron      FrontendCronRes      `json:"cron" dc:"Scheduled job frontend capability configuration" eg:"{}"`
+	Workspace FrontendWorkspaceRes `json:"workspace" dc:"Admin workspace startup routing configuration" eg:"{}"`
 }
 
 // FrontendAppRes stores brand-related public settings.
@@ -126,4 +127,9 @@ type FrontendCronShellRes struct {
 // FrontendCronTimezoneRes stores the default timezone exposed to the frontend.
 type FrontendCronTimezoneRes struct {
 	Current string `json:"current" dc:"The current host system time zone identifier, used as the default value for the new task time zone" eg:"Asia/Shanghai"`
+}
+
+// FrontendWorkspaceRes stores public-safe admin workspace routing settings.
+type FrontendWorkspaceRes struct {
+	BasePath string `json:"basePath" dc:"Non-root admin workspace entry path loaded from startup configuration" eg:"/admin"`
 }

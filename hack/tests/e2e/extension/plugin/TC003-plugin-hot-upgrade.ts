@@ -6,7 +6,7 @@ import type { APIRequestContext, APIResponse, Page } from "@playwright/test";
 import { request as playwrightRequest, expect } from "@playwright/test";
 
 import { test } from "../../../fixtures/auth";
-import { config } from "../../../fixtures/config";
+import { config, workspacePath } from "../../../fixtures/config";
 import { PluginPage } from "../../../pages/PluginPage";
 import {
   execPgSQLStatements,
@@ -106,7 +106,7 @@ function runtimeReleaseArchiveDir() {
 }
 
 function hostedAssetPath(version: string, relativePath = "index.html") {
-  return `/plugin-assets/${pluginID}/${version}/${relativePath}`;
+  return `/x-assets/${pluginID}/${version}/${relativePath}`;
 }
 
 function hostedAssetURL(version: string, relativePath = "index.html") {
@@ -214,6 +214,7 @@ function buildRuntimeWasmArtifact(options: {
       defaultInstallMode: "global",
       description: "Runtime plugin used by Playwright hot-upgrade verification.",
       menus: buildManifestMenu(options.version),
+      public_assets: [{ source: "frontend/pages", mount: "/" }],
     }),
   );
   const runtimePayload = Buffer.from(
@@ -227,7 +228,7 @@ function buildRuntimeWasmArtifact(options: {
   const frontendAssetsPayload = Buffer.from(
     JSON.stringify([
       {
-        path: "index.html",
+        path: "frontend/pages/index.html",
         contentBase64: Buffer.from(
           buildRuntimeFrontendHTML(options.version, options.marker),
         ).toString("base64"),
@@ -415,7 +416,7 @@ async function triggerPluginRegistryFocusCheck(page: Page) {
 }
 
 async function reloadHostProjection(page: Page) {
-  await page.goto("/dashboard/workspace", { waitUntil: "domcontentloaded" });
+  await page.goto(workspacePath("/dashboard/workspace"), { waitUntil: "domcontentloaded" });
   await waitForRouteReady(page, 15000);
   await page.reload({ waitUntil: "domcontentloaded" });
   await waitForRouteReady(page, 15000);

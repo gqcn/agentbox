@@ -26,7 +26,7 @@
 
 ### Requirement: 源码插件前端实现必须允许脱离管理工作台 SPA bundle
 
-系统 SHALL 允许源码插件在其 HTTP handler 中自行返回页面、静态资源、SPA fallback 或其他内容。主框架不得要求源码插件公开页面或静态资源必须参与默认管理工作台 SPA bundle。源码插件和动态插件 MAY 在 `plugin.yaml` 的 `publicAssets` 中声明由宿主托管的公开静态资源目录；该声明只表达 public asset 托管，不表达 HTTP 路由、门户路由或工作台页面语义。
+系统 SHALL 允许源码插件在其 HTTP handler 中自行返回页面、静态资源、SPA fallback 或其他内容。主框架不得要求源码插件公开页面或静态资源必须参与默认管理工作台 SPA bundle。源码插件和动态插件 MAY 在 `plugin.yaml` 的 `public_assets` 中声明由宿主托管的公开静态资源目录；该声明只表达 public asset 托管，不表达 HTTP 路由、门户路由或工作台页面语义。
 
 #### Scenario: 源码插件自行返回页面内容
 - **WHEN** 源码插件 HTTP handler 返回 HTML、JSON、文件流或其他响应
@@ -41,40 +41,46 @@
 #### Scenario: `/x-assets` 不是源码插件公开前端的强制入口
 - **WHEN** 源码插件选择通过自己的 HTTP 路由服务静态资源
 - **THEN** 系统不得强制其使用 `/x-assets/{plugin-id}/{version}/...`
-- **AND** `/x-assets` 只能作为宿主提供的可选插件 `publicAssets` 托管入口
+- **AND** `/x-assets` 只能作为宿主提供的可选插件 `public_assets` 托管入口
 - **AND** 系统不得保留 `/plugin-assets` 兼容入口
 
 ### Requirement: 插件公开静态资源必须通过声明式 public asset 托管
 
-系统 SHALL 允许源码插件和动态插件在 `plugin.yaml` 的 `publicAssets` 根字段中声明可公开的静态资源目录，并由宿主在 `/x-assets/{plugin-id}/{version}/...` 下统一托管这些 public assets。该声明必须限制在明确可公开的前端静态资源目录内；宿主不得因为插件注册了 embedded files、运行时 artifact 或 manifest 资源而默认公开整个插件资源包。每个声明项 MUST 使用 `source` 指向插件内相对目录或动态 artifact asset 前缀，并 MAY 使用 `mount` 指定在 `/x-assets/{plugin-id}/{version}/` 下的相对挂载路径；`mount` 为空或 `/` 时，声明目录内文件直接挂载到版本根。宿主 SHALL 使用严格 schema 校验 `publicAssets`，非法声明必须阻止插件校验、安装或启用。本变更 SHALL NOT 保留 `/plugin-assets` 旧路径兼容。
+系统 SHALL 允许源码插件和动态插件在 `plugin.yaml` 的 `public_assets` 根字段中声明可公开的静态资源目录，并由宿主在 `/x-assets/{plugin-id}/{version}/...` 下统一托管这些 public assets。宿主不得因为插件注册了 embedded files、运行时 artifact 或 manifest 资源而默认公开整个插件资源包；只有 `public_assets` 明确声明的插件自有资源才能被托管。每个声明项 MUST 使用 `source` 指向插件内相对目录或动态 artifact asset 前缀，并 MAY 使用 `mount` 指定在 `/x-assets/{plugin-id}/{version}/` 下的相对挂载路径；`mount` 为空或 `/` 时，声明目录内文件直接挂载到版本根。每个声明项 MAY 使用 `index` 指定访问该挂载目录本身时默认返回的文件名；未配置 `index` 时默认使用 `index.html`。宿主 SHALL 使用严格路径 schema 校验 `public_assets`，非法声明必须阻止插件校验、安装或启用。宿主 SHALL NOT 按目录名维护治理黑名单或前端目录白名单；插件配置声明的插件内目录即为发布授权边界。本变更 SHALL NOT 保留 `/plugin-assets` 旧路径兼容。
 
 #### Scenario: 源码插件声明 public assets
 - **WHEN** 源码插件通过 `plugin.Assets().UseEmbeddedFiles(...)` 注册 embedded files
-- **AND** 插件在 `plugin.yaml` 的 `publicAssets` 中声明 `source: frontend/public` 和 `mount: /`
+- **AND** 插件在 `plugin.yaml` 的 `public_assets` 中声明 `source: frontend/public` 和 `mount: /`
 - **THEN** 宿主从该 embedded filesystem 中读取声明目录，并将 `frontend/public/logo.png` 映射为 `/x-assets/{plugin-id}/{version}/logo.png`
 - **AND** 未声明目录中的文件不得被该路由访问
 
 #### Scenario: 动态插件声明 public assets
 - **WHEN** 动态插件 artifact 中包含 frontend assets
-- **AND** 插件在 `plugin.yaml` 的 `publicAssets` 中声明 `source` 前缀和可选 `mount`
+- **AND** 插件在 `plugin.yaml` 的 `public_assets` 中声明 `source` 前缀和可选 `mount`
 - **THEN** 宿主通过 `/x-assets/{plugin-id}/{version}/...` 仅提供声明匹配的 public asset 集合
 - **AND** SQL、生命周期、host-service、路由契约、i18n 和 apidoc 资源不得被 public asset resolver 读取
 
 #### Scenario: 动态插件既有 frontend assets 迁移到声明式模型
-- **WHEN** 动态插件 artifact 中存在 frontend asset，但 `plugin.yaml` 未在 `publicAssets` 中声明对应 `source`
+- **WHEN** 动态插件 artifact 中存在 frontend asset，但 `plugin.yaml` 未在 `public_assets` 中声明对应 `source`
 - **THEN** `/x-assets/{plugin-id}/{version}/...` 不得因为 artifact 中存在该 frontend asset 而自动返回资源
-- **AND** 依赖该资源的动态插件菜单或页面必须迁移为引用 `publicAssets` 声明后生成的访问路径
+- **AND** 依赖该资源的动态插件菜单或页面必须迁移为引用 `public_assets` 声明后生成的访问路径
 
-#### Scenario: public asset 声明不能暴露治理资源
-- **WHEN** 插件声明 `manifest`、`manifest/sql`、`backend`、`plugin.yaml`、包含 `../` 的路径或其他非公开治理资源目录为 public assets
-- **THEN** 宿主必须拒绝该声明或使插件校验失败
-- **AND** `/x-assets/{plugin-id}/{version}/...` 不得返回这些资源内容
+#### Scenario: public asset 声明以插件自身资源边界为安全边界
+- **WHEN** 插件声明 `manifest`、`backend` 或其他插件自身目录为 public assets
+- **THEN** 宿主必须按插件作者的显式声明发布这些目录中的资源
+- **AND** 当 `source` 使用 `../`、绝对路径、URL 或符号链接逃逸插件自身资源边界时，宿主必须拒绝该声明或使插件校验失败
 
 #### Scenario: public asset 声明使用严格 schema
-- **WHEN** 插件声明空 `source`、绝对路径、包含 `../` 的路径、不存在的 `source`、重复或互相覆盖的 `mount`
+- **WHEN** 插件声明空 `source`、绝对路径、包含 `../` 的路径、不存在的 `source`、符号链接逃逸插件资源边界、重复或互相覆盖的 `mount`
 - **THEN** 宿主必须拒绝该声明并使插件校验、安装或启用失败
 - **AND** 宿主不得静默忽略非法声明项
 - **AND** 可访问文件的 Content-Type 必须按文件扩展名或等价 MIME 推断能力确定
+
+#### Scenario: public asset 目录访问使用声明的 index 文件
+- **WHEN** 插件在 `public_assets` 中声明 `source: frontend/public`、`mount: /docs` 和 `index: index.htm`
+- **THEN** 浏览器访问 `/x-assets/{plugin-id}/{version}/docs` 或 `/x-assets/{plugin-id}/{version}/docs/` 时，宿主必须返回 `frontend/public/index.htm`
+- **AND** 当 `index` 未配置时，宿主必须继续默认返回声明目录下的 `index.html`
+- **AND** `index` 必须是安全的相对文件名，不能是目录、绝对路径、URL、通配符或包含 `../` 的路径
 
 #### Scenario: 插件版本作为 public asset 缓存边界
 - **WHEN** public asset 通过 `/x-assets/{plugin-id}/{version}/...` 访问
@@ -85,7 +91,7 @@
 - **WHEN** 插件未安装、未启用或当前租户不可用
 - **THEN** `/x-assets/{plugin-id}/{version}/...` 默认返回 404
 - **AND** 请求缺少租户上下文且无法判定租户时，系统按插件全局启用状态判断可用性
-- **AND** 租户专属、用户专属或需要鉴权的文件不得通过 `publicAssets` 发布，应由插件自管 HTTP 路由并自行挂载鉴权与租户中间件
+- **AND** 租户专属、用户专属或需要鉴权的文件不得通过 `public_assets` 发布，应由插件自管 HTTP 路由并自行挂载鉴权与租户中间件
 
 ### Requirement: 动态插件工作台页面必须继续通过动态页组件承载公开资源
 

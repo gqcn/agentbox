@@ -297,7 +297,7 @@ func mustCollectSourceFrontendAssets(t *testing.T, pluginDir string) []*frontend
 		if err != nil {
 			t.Fatalf("failed to read dynamic demo frontend asset %s: %v", filePath, err)
 		}
-		relativePath, err := filepath.Rel(frontendDir, filePath)
+		relativePath, err := filepath.Rel(pluginDir, filePath)
 		if err != nil {
 			t.Fatalf("failed to resolve dynamic demo frontend asset path %s: %v", filePath, err)
 		}

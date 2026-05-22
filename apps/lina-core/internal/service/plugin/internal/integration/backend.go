@@ -137,7 +137,7 @@ func (s *serviceImpl) ListResourceRecords(ctx context.Context, in ResourceListIn
 	if err != nil {
 		return nil, err
 	}
-	if !s.IsEnabled(ctx, in.PluginID) {
+	if !s.CanExposeBusinessEntries(ctx, in.PluginID) {
 		return nil, gerror.New("plugin is not enabled")
 	}
 

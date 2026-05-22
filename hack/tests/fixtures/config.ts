@@ -5,16 +5,20 @@
 // centralized here so that test files only depend on this single source of
 // truth. Override via environment variables when running tests against a
 // non-default deployment:
-//   - E2E_BASE_URL          frontend dev server origin (default 127.0.0.1:5666)
+//   - E2E_BASE_URL          backend public origin for browser tests (default 127.0.0.1:9120)
 //   - E2E_BACKEND_BASE_URL  backend HTTP origin (default 127.0.0.1:9120)
 //   - E2E_API_BASE_URL      backend `/api/v1/` base URL; overrides backendBaseURL when set
 //   - E2E_PUBLIC_BASE_URL   backend public origin (no `/api/v1/` suffix); overrides backendBaseURL when set
+//   - E2E_WORKSPACE_BASE_PATH  admin workspace browser entry path (default /admin)
 //
-// 所有端口（前端开发服务器、后端 HTTP 接口）集中到此处，测试文件不应再单独
+// 所有端口（后端公共入口、后端 HTTP 接口）集中到此处，测试文件不应再单独
 // 硬编码端口或回退地址。如需在非默认部署下运行测试，可通过上述环境变量覆盖。
 
-const frontendBaseURL = process.env.E2E_BASE_URL ?? 'http://127.0.0.1:5666';
 const backendBaseURL = process.env.E2E_BACKEND_BASE_URL ?? 'http://127.0.0.1:9120';
+const browserBaseURL = process.env.E2E_BASE_URL ?? backendBaseURL;
+const workspaceBasePath = normalizeWorkspaceBasePath(
+  process.env.E2E_WORKSPACE_BASE_PATH ?? '/admin',
+);
 
 // Backend API base URL with the /api/v1/ prefix; trailing slash is required so
 // relative paths like 'auth/login' resolve correctly under playwrightRequest.
@@ -23,8 +27,8 @@ const apiBaseURL =
   process.env.E2E_API_BASE_URL ?? `${backendBaseURL.replace(/\/$/, '')}/api/v1/`;
 
 // Public origin used when accessing non-/api/v1 routes on the backend (such as
-// /plugin-assets/ or /api.json).
-// 直接访问后端非 /api/v1 路径（例如 /plugin-assets/ 或 /api.json）时使用的源。
+// /x-assets/ or /api.json).
+// 直接访问后端非 /api/v1 路径（例如 /x-assets/ 或 /api.json）时使用的源。
 const publicBaseURL =
   process.env.E2E_PUBLIC_BASE_URL ?? apiBaseURL.replace(/\/api\/v1\/?$/, '');
 
@@ -41,9 +45,45 @@ const frontendProxyBackendOrigin =
 export const config = {
   adminUser: process.env.E2E_ADMIN_USER ?? 'admin',
   adminPass: process.env.E2E_ADMIN_PASS ?? 'admin123',
-  baseURL: frontendBaseURL,
+  baseURL: browserBaseURL,
   backendBaseURL,
   apiBaseURL,
   publicBaseURL,
   frontendProxyBackendOrigin,
+  workspaceBasePath,
 };
+
+export function workspacePath(path = '/') {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  if (normalizedPath === '/') {
+    return workspaceBasePath;
+  }
+  return `${workspaceBasePath}${normalizedPath}`;
+}
+
+export function isWorkspaceManagedPath(path: string) {
+  if (!path.startsWith('/')) {
+    return false;
+  }
+  return [
+    '/',
+    '/about',
+    '/auth',
+    '/dashboard',
+    '/dev',
+    '/developer',
+    '/monitor',
+    '/platform',
+    '/profile',
+    '/system',
+    '/tenant',
+  ].some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+}
+
+function normalizeWorkspaceBasePath(value: string) {
+  const normalized = value.trim().replaceAll('\\', '/').replace(/\/+/g, '/').replace(/\/+$/, '');
+  if (!normalized || normalized === '/' || !normalized.startsWith('/')) {
+    return '/admin';
+  }
+  return normalized;
+}

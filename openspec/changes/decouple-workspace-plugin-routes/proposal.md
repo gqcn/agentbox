@@ -13,7 +13,7 @@
 - 源码插件和动态插件 API 统一使用 `/x/{plugin-id}/api/v1/...` 插件 API 命名空间；`/x` 表示插件 API 入口，不再表示动态插件专属数据面。
 - `/x/**` 只用于插件 API，源码插件公开页面、门户、静态资源或自管 fallback 不得挂载到 `/x` 命名空间下。
 - 源码插件 registrar 提供 `APIPrefix()` 或等价方法返回 `/x/{plugin-id}/api/v1`，官方源码插件 API、动态插件 route contract 公开路径、前端 helper、OpenAPI 投影和测试均按该统一前缀实现；源码插件公开页面、门户、静态资源或自管 fallback 仍可注册其他非保留 HTTP 路由。
-- 增加可选的插件公开静态资源声明能力，允许源码插件和动态插件在 `plugin.yaml` 的 `publicAssets` 中声明可公开目录，由宿主托管到 `/x-assets/{plugin-id}/{version}/...`；声明采用严格 schema，默认匿名可读但受插件安装、启用与租户可用性治理约束，不得暴露 SQL、manifest、i18n、apidoc、后端源码或其他治理资源；本变更不保留 `/plugin-assets` 兼容入口。
+- 增加可选的插件公开静态资源声明能力，允许源码插件和动态插件在 `plugin.yaml` 的 `public_assets` 中声明可公开目录，由宿主托管到 `/x-assets/{plugin-id}/{version}/...`；声明采用严格路径 schema，默认匿名可读但受插件安装、启用与租户可用性治理约束，宿主只保证声明资源不逃逸插件自身资源边界，不按目录名称维护治理黑名单或前端目录白名单；本变更不保留 `/plugin-assets` 兼容入口。
 - `plugin.yaml` 中的 `menus` 继续作为管理工作台权限与导航治理的事实来源；插件 HTTP 路由不自动投影为菜单、权限或工作台路由。
 - 主框架保护已注册的宿主控制面 API 路由、统一插件 API 命名空间 `/x`、统一插件资产命名空间 `/x-assets`、管理工作台入口路径等边界；源码插件 API 不再使用宿主 `/api/v1` 命名空间，若注册实际冲突路由，由 GoFrame 路由注册冲突机制暴露错误并阻止启动。
 - 前端、后端和开发代理需要按新的工作台入口路径处理刷新、登录跳转、静态资源 fallback 和 E2E 访问地址；开发模式以后端公开地址作为统一入口，由后端在工作台 basePath 下代理到 Vite，不让 Vite 根路径吞掉源码插件公开路由。
@@ -35,7 +35,7 @@
 - 后端：`apps/lina-core/internal/cmd` 前端静态资源绑定、SPA fallback、源码插件路由注册顺序、HTTP 启动配置读取与校验。
 - 前端：`apps/lina-vben/apps/web-antd` 路由 base、登录跳转、刷新行为、public frontend 配置读取、插件 API base helper、动态插件页面资产 URL、开发代理和测试访问路径。
 - 配置：新增或调整工作台入口路径配置，默认值为 `/admin`，需同步默认配置、模板、配置元数据、非根路径校验和文档。
-- 插件：源码插件无需在 `plugin.yaml` 声明公开 HTTP 路由；可继续在 `backend/plugin.go` 中注册路由，并自行区分公开页面、静态资源与插件 API；源码插件和动态插件 API 均必须使用 `/x/{plugin-id}/api/v1/...`；源码插件和动态插件可在 `plugin.yaml` 声明 `publicAssets`，由宿主按 `/x-assets/{plugin-id}/{version}/...` 统一托管可公开资源；动态插件既有 frontend assets 访问路径迁移到该声明式模型维护，且不保留 `/plugin-assets` 旧入口。
+- 插件：源码插件无需在 `plugin.yaml` 声明公开 HTTP 路由；可继续在 `backend/plugin.go` 中注册路由，并自行区分公开页面、静态资源与插件 API；源码插件和动态插件 API 均必须使用 `/x/{plugin-id}/api/v1/...`；源码插件和动态插件可在 `plugin.yaml` 声明 `public_assets`，由宿主按 `/x-assets/{plugin-id}/{version}/...` 统一托管可公开资源；动态插件既有 frontend assets 访问路径迁移到该声明式模型维护，且不保留 `/plugin-assets` 旧入口。
 - i18n：若配置界面或文档中新增工作台入口路径文案，需要同步运行时语言包与 apidoc 资源；若仅配置文件和内部校验变更，则需明确不影响运行时文案。
 - 缓存一致性：本变更不新增业务缓存；需确认工作台静态资源 fallback 和插件路由注册不引入跨节点可变状态；公开静态资源 URL 使用插件版本作为缓存边界，同一版本下资源内容必须保持不可变，资源变化必须升级插件版本或采用等价的内容版本机制。
 - 测试：需要覆盖工作台入口路径、根路径不再被管理台 SPA 吞掉、源码插件根路由可注册、保留路径仍优先生效、GoFrame 路由冲突能阻止重复注册等场景。

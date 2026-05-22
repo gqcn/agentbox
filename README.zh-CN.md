@@ -34,6 +34,12 @@
 | **后台演示** | http://demo.linapro.ai/ <br/>账号：`admin` <br/>密码：`admin123`|
 | **官方网站** | https://linapro.ai/ |
 
+# 默认入口
+
+内置管理工作台默认从`/admin`提供访问。根路径`/`会留给源码插件或宿主部署自行维护的公开路由使用。
+
+宿主控制面接口继续使用`/api/v1`。源码插件和动态插件的插件接口统一使用`/x/{plugin-id}/api/v1`，插件在`plugin.yaml`的`public_assets`中声明的公开静态资源会通过`/x-assets/{plugin-id}/{version}/...`提供访问。
+
 # 项目定位
 
 `LinaPro`面向独立开发者、研发团队和企业，提供以下核心能力：

@@ -6,6 +6,9 @@ package catalog
 import (
 	"crypto/sha256"
 	"encoding/json"
+	"io/fs"
+	"net/url"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -14,6 +17,16 @@ import (
 
 	"lina-core/pkg/pluginfs"
 )
+
+// defaultPublicAssetIndex is the fallback directory index file for one
+// public_assets declaration when plugin.yaml does not specify index.
+const defaultPublicAssetIndex = "index.html"
+
+// DefaultPublicAssetIndex returns the directory index fallback used when one
+// public_assets declaration omits the index field.
+func DefaultPublicAssetIndex() string {
+	return defaultPublicAssetIndex
+}
 
 // Default menu flag values applied when manifest menu fields are omitted.
 const (
@@ -102,6 +115,9 @@ func (s *serviceImpl) ValidateManifest(manifest *Manifest, filePath string) erro
 			}
 		}
 	}
+	if err := ValidatePublicAssets(manifest, rootDir); err != nil {
+		return gerror.Wrapf(err, "plugin public asset metadata is invalid: %s", fileLabel)
+	}
 	if embeddedFiles := GetSourcePluginEmbeddedFiles(manifest); embeddedFiles != nil {
 		if err := pluginfs.ValidateSQLPathsFromFS(embeddedFiles, s.ListInstallSQLPaths(manifest), false); err != nil {
 			return gerror.Wrapf(err, "plugin manifest install SQL constraint is invalid: %s", fileLabel)
@@ -157,7 +173,216 @@ func (s *serviceImpl) ValidateUploadedRuntimeManifest(manifest *Manifest) error 
 	if err := ValidateDependencySpec(manifest.ID, manifest.Dependencies); err != nil {
 		return err
 	}
+	if err := ValidatePublicAssets(manifest, manifest.RootDir); err != nil {
+		return err
+	}
 	return ValidateManifestMenus(manifest)
+}
+
+// ValidatePublicAssets validates and normalizes plugin-declared public asset
+// directories. Source plugins must point at real embedded or filesystem
+// directories. Dynamic plugins must point at prefixes present in runtime
+// frontend assets; frontend assets are not public unless a declaration matches.
+func ValidatePublicAssets(manifest *Manifest, rootDir string) error {
+	if manifest == nil || len(manifest.PublicAssets) == 0 {
+		return nil
+	}
+
+	mounts := make([]string, 0, len(manifest.PublicAssets))
+	for index, spec := range manifest.PublicAssets {
+		if spec == nil {
+			return gerror.Newf("public_assets declaration %d cannot be nil", index+1)
+		}
+		source, err := normalizePublicAssetSource(spec.Source)
+		if err != nil {
+			return gerror.Wrapf(err, "public_assets declaration %d source is invalid", index+1)
+		}
+		mount, err := normalizePublicAssetMount(spec.Mount)
+		if err != nil {
+			return gerror.Wrapf(err, "public_assets declaration %d mount is invalid", index+1)
+		}
+		indexFile, err := normalizePublicAssetIndex(spec.Index)
+		if err != nil {
+			return gerror.Wrapf(err, "public_assets declaration %d index is invalid", index+1)
+		}
+		if publicAssetMountOverlaps(mounts, mount) {
+			return gerror.Newf("public_assets mount overlaps another declaration: %s", mount)
+		}
+		if err = validatePublicAssetSourceExists(manifest, rootDir, source); err != nil {
+			return gerror.Wrapf(err, "public_assets source does not exist: %s", source)
+		}
+		spec.Source = source
+		spec.Mount = mount
+		spec.Index = indexFile
+		mounts = append(mounts, mount)
+	}
+	return nil
+}
+
+// normalizePublicAssetSource converts one declaration source into a safe
+// plugin-relative path. The declaration is treated as the plugin author's
+// explicit publication boundary; containment and existence checks are enforced
+// later against the plugin backing store.
+func normalizePublicAssetSource(value string) (string, error) {
+	normalized, err := normalizePublicAssetRelativePath(value, false)
+	if err != nil {
+		return "", err
+	}
+	return normalized, nil
+}
+
+// normalizePublicAssetMount converts one URL mount into a relative path under
+// the plugin version root. Empty and "/" both mean the version root.
+func normalizePublicAssetMount(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || trimmed == "/" {
+		return "", nil
+	}
+	return normalizePublicAssetRelativePath(trimmed, true)
+}
+
+// normalizePublicAssetIndex converts one directory index value into a safe
+// declaration-relative file path. Empty values keep the historical index.html
+// default.
+func normalizePublicAssetIndex(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return defaultPublicAssetIndex, nil
+	}
+	if strings.HasSuffix(strings.ReplaceAll(trimmed, "\\", "/"), "/") {
+		return "", gerror.Newf("index must be a file name under the declared source root: %s", value)
+	}
+	normalized, err := normalizePublicAssetRelativePath(trimmed, false)
+	if err != nil {
+		return "", err
+	}
+	if path.Base(normalized) != normalized {
+		return "", gerror.Newf("index must be a file name under the declared source root: %s", value)
+	}
+	return normalized, nil
+}
+
+// normalizePublicAssetRelativePath is the shared strict normalizer for source
+// and mount paths. It rejects URLs, absolute paths, traversal, and wildcards.
+func normalizePublicAssetRelativePath(value string, allowRoot bool) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		if allowRoot {
+			return "", nil
+		}
+		return "", gerror.New("path cannot be empty")
+	}
+	if strings.Contains(trimmed, "://") {
+		return "", gerror.Newf("path cannot be a URL: %s", value)
+	}
+	if parsed, err := url.Parse(trimmed); err == nil && parsed != nil && parsed.Scheme != "" {
+		return "", gerror.Newf("path cannot be a URL: %s", value)
+	}
+	if filepath.IsAbs(trimmed) || strings.HasPrefix(trimmed, "/") {
+		if allowRoot && trimmed == "/" {
+			return "", nil
+		}
+		return "", gerror.Newf("path must be relative: %s", value)
+	}
+	if strings.ContainsAny(trimmed, "*?") || strings.Contains(trimmed, "#") {
+		return "", gerror.Newf("path contains unsupported characters: %s", value)
+	}
+	normalized := path.Clean(strings.ReplaceAll(trimmed, "\\", "/"))
+	normalized = strings.TrimPrefix(normalized, "./")
+	if normalized == "." {
+		if allowRoot {
+			return "", nil
+		}
+		return "", gerror.New("path cannot be empty")
+	}
+	if normalized == ".." || strings.HasPrefix(normalized, "../") {
+		return "", gerror.Newf("path escapes plugin root: %s", value)
+	}
+	return strings.Trim(normalized, "/"), nil
+}
+
+// publicAssetMountOverlaps reports duplicate or parent-child mount collisions.
+func publicAssetMountOverlaps(existing []string, candidate string) bool {
+	candidate = strings.Trim(candidate, "/")
+	for _, item := range existing {
+		current := strings.Trim(item, "/")
+		if current == candidate {
+			return true
+		}
+		if current == "" || candidate == "" {
+			return true
+		}
+		if strings.HasPrefix(current, candidate+"/") || strings.HasPrefix(candidate, current+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// validatePublicAssetSourceExists checks declaration sources against the
+// relevant plugin backing store.
+func validatePublicAssetSourceExists(manifest *Manifest, rootDir string, source string) error {
+	if manifest == nil {
+		return gerror.New("plugin manifest cannot be nil")
+	}
+	if manifest.RuntimeArtifact != nil {
+		if runtimePublicAssetSourceExists(manifest.RuntimeArtifact.FrontendAssets, source) {
+			return nil
+		}
+		return gerror.Newf("dynamic runtime frontend asset prefix does not exist: %s", source)
+	}
+	if embeddedFiles := GetSourcePluginEmbeddedFiles(manifest); embeddedFiles != nil {
+		if err := pluginfs.ValidateNoSymlinkPathFromFS(embeddedFiles, source); err != nil {
+			return err
+		}
+		stat, err := fs.Stat(embeddedFiles, source)
+		if err != nil {
+			return err
+		}
+		if !stat.IsDir() {
+			return gerror.Newf("public_assets source must be a directory: %s", source)
+		}
+		return nil
+	}
+	resolvedPath, err := pluginfs.ResolveResourcePath(rootDir, source)
+	if err != nil {
+		return err
+	}
+	if !gfile.IsDir(resolvedPath) {
+		return gerror.Newf("public_assets source must be a directory: %s", source)
+	}
+	return nil
+}
+
+// runtimePublicAssetSourceExists reports whether the dynamic artifact contains
+// at least one frontend asset under source.
+func runtimePublicAssetSourceExists(assets []*ArtifactFrontendAsset, source string) bool {
+	normalizedSource := strings.Trim(normalizeRuntimeAssetPath(source), "/")
+	for _, asset := range assets {
+		if asset == nil {
+			continue
+		}
+		assetPath := normalizeRuntimeAssetPath(asset.Path)
+		if assetPath == "" {
+			continue
+		}
+		if normalizedSource == "" || assetPath == normalizedSource || strings.HasPrefix(assetPath, normalizedSource+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// normalizeRuntimeAssetPath normalizes dynamic artifact frontend asset keys.
+func normalizeRuntimeAssetPath(value string) string {
+	normalized := strings.ReplaceAll(strings.TrimSpace(value), "\\", "/")
+	normalized = strings.TrimPrefix(normalized, "/")
+	normalized = strings.TrimPrefix(normalized, "./")
+	normalized = path.Clean(normalized)
+	if normalized == "." || normalized == ".." || strings.HasPrefix(normalized, "../") {
+		return ""
+	}
+	return strings.Trim(normalized, "/")
 }
 
 // hydrateManifestTenantGovernanceFromFile fills governance fields from the
@@ -182,6 +407,9 @@ func (s *serviceImpl) hydrateManifestTenantGovernanceFromFile(manifest *Manifest
 	}
 	if strings.TrimSpace(manifest.DefaultInstallMode) == "" {
 		manifest.DefaultInstallMode = fileManifest.DefaultInstallMode
+	}
+	if len(manifest.PublicAssets) == 0 && len(fileManifest.PublicAssets) > 0 {
+		manifest.PublicAssets = ClonePublicAssetSpecs(fileManifest.PublicAssets)
 	}
 	return nil
 }

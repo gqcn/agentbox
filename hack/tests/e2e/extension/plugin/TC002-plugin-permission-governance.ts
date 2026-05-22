@@ -185,6 +185,10 @@ function buildRuntimeWasmArtifact(options: {
       defaultInstallMode: "global",
       description: options.description,
       menus,
+      public_assets:
+        frontendAssets.length > 0
+          ? [{ source: "frontend/pages", mount: "/" }]
+          : undefined,
     }),
   );
   const runtimePayload = Buffer.from(
@@ -403,7 +407,7 @@ function seedUserOwnedPluginRecord(userID: number) {
 }
 
 function buildRuntimeGovernanceArtifact() {
-  const frontendAssetPath = `/plugin-assets/${pluginID}/${pluginVersion}/index.html`;
+  const frontendAssetPath = `/x-assets/${pluginID}/${pluginVersion}/index.html`;
 
   return buildRuntimeWasmArtifact({
     id: pluginID,
@@ -434,7 +438,7 @@ function buildRuntimeGovernanceArtifact() {
     ],
     frontendAssets: [
       {
-        path: "index.html",
+        path: "frontend/pages/index.html",
         content: `<html><body><h1>${pluginName}</h1><p>runtime governance asset</p></body></html>`,
         contentType: "text/html; charset=utf-8",
       },

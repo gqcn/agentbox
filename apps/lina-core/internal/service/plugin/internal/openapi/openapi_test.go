@@ -13,7 +13,7 @@ import (
 // responses follow the runtime bridge execution flag.
 func TestBuildRouteOpenAPIOperationUsesBridgeState(t *testing.T) {
 	operation := BuildRouteOpenAPIOperation("linapro-demo-dynamic", &pluginbridge.RouteContract{
-		Path:    "/review-summary",
+		Path:    "/api/v1/review-summary",
 		Method:  http.MethodGet,
 		Access:  pluginbridge.AccessLogin,
 		Summary: "Review Summary",
@@ -32,9 +32,15 @@ func TestBuildRouteOpenAPIOperationUsesBridgeState(t *testing.T) {
 	if operation.Security == nil {
 		t.Fatal("expected login route to project bearer security")
 	}
+	if operation.OperationID != "" {
+		t.Fatalf("expected dynamic OpenAPI operationId to stay empty, got %s", operation.OperationID)
+	}
+	if len(operation.XExtensions) != 0 {
+		t.Fatalf("expected dynamic OpenAPI operation to omit i18n extensions, got %#v", operation.XExtensions)
+	}
 
 	placeholder := BuildRouteOpenAPIOperation("linapro-demo-dynamic", &pluginbridge.RouteContract{
-		Path:   "/placeholder",
+		Path:   "/api/v1/placeholder",
 		Method: http.MethodGet,
 		Access: pluginbridge.AccessPublic,
 	}, &pluginbridge.BridgeSpec{
@@ -51,8 +57,42 @@ func TestBuildRouteOpenAPIOperationUsesBridgeState(t *testing.T) {
 // TestBuildRoutePublicPathBuildsFixedPublicPath verifies that public route
 // projection always uses the canonical dynamic plugin prefix.
 func TestBuildRoutePublicPathBuildsFixedPublicPath(t *testing.T) {
-	actual := BuildRoutePublicPath("plugin-openapi-projection", "/review-summary")
-	if actual != "/x/plugin-openapi-projection/review-summary" {
+	actual := BuildRoutePublicPath("plugin-openapi-projection", "/api/v1/review-summary")
+	if actual != "/x/plugin-openapi-projection/api/v1/review-summary" {
 		t.Fatalf("expected fixed public path projection, got %s", actual)
+	}
+}
+
+// TestBuildRoutePublicPathPreservesPluginOwnedPathContent verifies `/api/v1`
+// is only a plugin-local naming convention and not a forced public-path segment.
+func TestBuildRoutePublicPathPreservesPluginOwnedPathContent(t *testing.T) {
+	tests := []struct {
+		name      string
+		routePath string
+		expected  string
+	}{
+		{
+			name:      "api v2",
+			routePath: "/api/v2/review-summary",
+			expected:  "/x/plugin-openapi-projection/api/v2/review-summary",
+		},
+		{
+			name:      "interface",
+			routePath: "/interface/m1/review-summary",
+			expected:  "/x/plugin-openapi-projection/interface/m1/review-summary",
+		},
+		{
+			name:      "graphql",
+			routePath: "/graphql",
+			expected:  "/x/plugin-openapi-projection/graphql",
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			actual := BuildRoutePublicPath("plugin-openapi-projection", testCase.routePath)
+			if actual != testCase.expected {
+				t.Fatalf("expected public path %s, got %s", testCase.expected, actual)
+			}
+		})
 	}
 }

@@ -172,7 +172,7 @@ func (t *testTopology) SetPrimary(primary bool) {
 func buildVersionedRuntimeFrontendAssets(marker string) []*catalog.ArtifactFrontendAsset {
 	return []*catalog.ArtifactFrontendAsset{
 		{
-			Path:          "index.html",
+			Path:          "frontend/pages/index.html",
 			ContentBase64: base64.StdEncoding.EncodeToString([]byte("<html><body>" + marker + "</body></html>")),
 			ContentType:   "text/html; charset=utf-8",
 		},

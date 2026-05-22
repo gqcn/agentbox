@@ -9,11 +9,12 @@ import (
 	"github.com/gogf/gf/v2/net/goai"
 
 	"lina-core/pkg/pluginbridge"
+	"lina-core/pkg/pluginhost"
 )
 
 // BuildRoutePublicPath returns the full public URL path for one dynamic plugin route.
 func BuildRoutePublicPath(pluginID string, routePath string) string {
-	return RoutePublicPrefix + "/" + strings.TrimSpace(pluginID) + NormalizeDynamicRoutePath(routePath)
+	return pluginhost.PluginAPINamespacePrefix + "/" + strings.TrimSpace(pluginID) + NormalizeDynamicRoutePath(routePath)
 }
 
 // NormalizeDynamicRoutePath ensures a route path starts with "/" and has no trailing slash.

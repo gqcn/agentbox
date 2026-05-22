@@ -53,6 +53,9 @@ func (s *serviceImpl) RegisterHTTPRoutes(
 			if err = handler.Handler(ctx, registrar); err != nil {
 				return err
 			}
+			if routeErr := registrar.Routes().Err(); routeErr != nil {
+				return routeErr
+			}
 		}
 		s.setSourceRouteBindings(manifest.ID, registrar.Routes().RouteBindings())
 	}
@@ -222,7 +225,7 @@ func (s *serviceImpl) filterMenusSlow(ctx context.Context, menus []*entity.SysMe
 			continue
 		}
 		pluginID := catalog.ParsePluginIDFromMenu(menu)
-		if pluginID != "" && !s.IsEnabled(ctx, pluginID) {
+		if pluginID != "" && !s.CanExposeBusinessEntries(ctx, pluginID) {
 			continue
 		}
 		if s.shouldKeepMenuSlow(ctx, menu) {
@@ -331,7 +334,7 @@ func (s *serviceImpl) shouldKeepMenuSlow(ctx context.Context, menu *entity.SysMe
 		menu.Status,
 	)
 	for _, manifest := range manifests {
-		if !s.IsEnabled(ctx, manifest.ID) {
+		if !s.CanExposeBusinessEntries(ctx, manifest.ID) {
 			continue
 		}
 		sourcePlugin, ok := pluginhost.GetSourcePlugin(manifest.ID)
@@ -424,7 +427,7 @@ func (s *serviceImpl) shouldKeepPermissionSlow(ctx context.Context, menu *entity
 		menu.Perms,
 	)
 	for _, manifest := range manifests {
-		if !s.IsEnabled(ctx, manifest.ID) {
+		if !s.CanExposeBusinessEntries(ctx, manifest.ID) {
 			continue
 		}
 		sourcePlugin, ok := pluginhost.GetSourcePlugin(manifest.ID)
@@ -467,7 +470,7 @@ func (s *serviceImpl) shouldDispatchHookToPlugin(
 		if runtime != nil {
 			return runtime.isEnabled(pluginID)
 		}
-		return s.IsEnabled(ctx, pluginID)
+		return s.CanExposeBusinessEntries(ctx, pluginID)
 	}
 }
 

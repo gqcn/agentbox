@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
 
 import { test, expect } from "../../fixtures/auth";
+import { workspacePath } from "../../fixtures/config";
 import { waitForRouteReady } from "../../support/ui";
 
 function unwrapApiData(payload: any) {
@@ -43,7 +44,7 @@ test.describe("TC-4 runtime i18n disabled switch", () => {
     const page = await adminContext.newPage();
     await mockRuntimeI18nDisabled(page);
 
-    await page.goto("/dashboard/analytics", { waitUntil: "domcontentloaded" });
+    await page.goto(workspacePath("/dashboard/analytics"), { waitUntil: "domcontentloaded" });
     await waitForRouteReady(page, 15000);
 
     await expect

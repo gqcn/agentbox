@@ -56,7 +56,7 @@ func TestVerifyAcceptsAlignedPorts(t *testing.T) {
 	viteConfig := `
 		proxy: {
 			'/api': { target: 'http://localhost:9120' },
-			'/plugin-assets': { target: 'http://localhost:9120' },
+			'/x-assets': { target: 'http://localhost:9120' },
 		}
 	`
 	root := writeRepoFixture(t, backendYAML, viteConfig)
@@ -122,7 +122,7 @@ func TestVerifyReportsAllMismatchedFrontendTargets(t *testing.T) {
 	viteConfig := `
 		proxy: {
 			'/api': { target: 'http://localhost:9120' },
-			'/plugin-assets': { target: 'http://localhost:8080' },
+			'/x-assets': { target: 'http://localhost:8080' },
 			'/stoplight/apidocs.html': { target: 'http://localhost:7000' },
 		}
 	`

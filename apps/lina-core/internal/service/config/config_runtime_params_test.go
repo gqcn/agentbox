@@ -348,6 +348,9 @@ func TestGetPublicFrontendUsesProtectedConfigValues(t *testing.T) {
 	if cfg.Cron.Timezone.Current == "" {
 		t.Fatal("expected public frontend cron timezone current value to be present")
 	}
+	if cfg.Workspace.BasePath != defaultWorkspaceBasePath {
+		t.Fatalf("expected public frontend workspace base path %q, got %q", defaultWorkspaceBasePath, cfg.Workspace.BasePath)
+	}
 }
 
 // TestRuntimeParamSnapshotReloadsAfterRevisionChange verifies direct reads

@@ -13,14 +13,7 @@ import (
 	menusvc "lina-core/internal/service/menu"
 	"lina-core/pkg/apitime"
 	"lina-core/pkg/menutype"
-)
-
-// Runtime menu route conversion constants shared by hosted-asset menu items.
-const (
-	menuRuntimePageComponentPath      = "system/plugin/dynamic-page"
-	menuQueryKeyEmbeddedSource        = "embeddedSrc"
-	menuQueryKeyPluginAccessMode      = "pluginAccessMode"
-	menuPluginAccessModeEmbeddedMount = "embedded-mount"
+	"lina-core/pkg/pluginhost"
 )
 
 // GetAll returns all menus for the current user in Vben route format
@@ -205,8 +198,8 @@ func convertToRouteItems(items []*menusvc.MenuItem) []*v1.MenuRouteItem {
 				// actual asset URL is forwarded through route query parameters.
 				route.Component = generateComponentPath(item.Component)
 				route.Meta.Query = mergeMenuQueryParams(menuQuery, map[string]string{
-					menuQueryKeyEmbeddedSource:   menuLinkTarget,
-					menuQueryKeyPluginAccessMode: menuPluginAccessModeEmbeddedMount,
+					pluginhost.DynamicEmbeddedSourceQueryKey: menuLinkTarget,
+					pluginhost.DynamicAccessModeQueryKey:     pluginhost.DynamicAccessModeEmbeddedMount,
 				})
 			} else if item.IsFrame == 1 {
 				route.Component = "BasicLayout"
@@ -342,7 +335,7 @@ func normalizeMenuLinkTarget(path string) string {
 	}
 
 	normalizedHostedPath := "/" + strings.TrimLeft(trimmedPath, "/")
-	if strings.HasPrefix(normalizedHostedPath, "/plugin-assets/") {
+	if strings.HasPrefix(normalizedHostedPath, pluginhost.HostedAssetURLPrefix) {
 		return normalizedHostedPath
 	}
 	return ""
@@ -404,10 +397,10 @@ func mergeMenuQueryParams(base map[string]string, overrides map[string]string) m
 // isRuntimeEmbeddedMountMenu reports whether the menu entry points at the
 // hosted runtime page component using embedded-mount semantics.
 func isRuntimeEmbeddedMountMenu(item *menusvc.MenuItem, menuQuery map[string]string) bool {
-	if normalizeMenuComponentPath(item.Component) != menuRuntimePageComponentPath {
+	if normalizeMenuComponentPath(item.Component) != pluginhost.DynamicPageComponentPath {
 		return false
 	}
-	return strings.TrimSpace(menuQuery[menuQueryKeyPluginAccessMode]) == menuPluginAccessModeEmbeddedMount
+	return strings.TrimSpace(menuQuery[pluginhost.DynamicAccessModeQueryKey]) == pluginhost.DynamicAccessModeEmbeddedMount
 }
 
 // normalizeMenuComponentPath normalizes one stored component path into the

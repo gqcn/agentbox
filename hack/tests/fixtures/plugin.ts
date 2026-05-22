@@ -5,7 +5,7 @@ import path from 'node:path';
 
 import { request as playwrightRequest } from '@playwright/test';
 
-import { config } from './config';
+import { config, workspacePath } from './config';
 import { execPgSQLFile } from '../support/postgres';
 import { waitForRouteReady } from '../support/ui';
 
@@ -164,7 +164,9 @@ export async function updatePluginStatus(
 export async function refreshPluginProjection(page: Page) {
   // Always land on a stable host route before reloading so plugin lifecycle
   // changes do not leave the current page stranded on a stale dynamic route.
-  await page.goto('/dashboard/analytics', { waitUntil: 'domcontentloaded' });
+  await page.goto(workspacePath('/dashboard/analytics'), {
+    waitUntil: 'domcontentloaded',
+  });
   await waitForRouteReady(page, 15000);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await waitForRouteReady(page, 15000);

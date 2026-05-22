@@ -5,7 +5,12 @@ package cmd
 import (
 	"context"
 	"io/fs"
+	"mime"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
+	"os"
+	"path"
 	"strings"
 
 	"github.com/gogf/gf/v2/net/ghttp"
@@ -13,14 +18,19 @@ import (
 	"lina-core/internal/packed"
 	pluginsvc "lina-core/internal/service/plugin"
 	"lina-core/pkg/logger"
+	"lina-core/pkg/pluginhost"
 )
 
-// bindFrontendAssetRoutes registers the final catch-all static route for host
-// frontend assets and SPA fallback after all API and plugin routes are bound.
+const frontendDevServerURLEnv = "LINAPRO_FRONTEND_DEV_SERVER_URL"
+
+// bindFrontendAssetRoutes registers the final frontend catch-all route after
+// API and plugin routes are bound. The handler only serves `/x-assets` and the
+// configured workspace base path; other unmatched paths return 404.
 func bindFrontendAssetRoutes(
 	ctx context.Context,
 	server *ghttp.Server,
 	pluginSvc pluginsvc.Service,
+	workspaceBasePath string,
 ) error {
 	subFS, err := fs.Sub(packed.Files, "public")
 	if err != nil {
@@ -28,30 +38,85 @@ func bindFrontendAssetRoutes(
 		return err
 	}
 	fileServer := http.FileServer(http.FS(subFS))
-	server.BindHandler("/*", newFrontendAssetHandler(subFS, fileServer, pluginSvc))
+	devProxy, err := newFrontendDevServerProxy()
+	if err != nil {
+		return err
+	}
+	normalizedWorkspaceBasePath := normalizeWorkspaceRequestBasePath(workspaceBasePath)
+	assetHandler := newFrontendAssetHandler(subFS, fileServer, pluginSvc, devProxy, normalizedWorkspaceBasePath)
+	server.BindHandler("/{entry}", assetHandler)
+	server.BindHandler("/{entry}/*any", assetHandler)
 	return nil
 }
 
-// newFrontendAssetHandler creates the SPA/static-file handler used as the last
-// route in the server so API and plugin routes get first chance to match.
+// newFrontendAssetHandler creates the guarded catch-all handler. It runs after
+// host and source-plugin routes, so concrete plugin routes get first chance.
 func newFrontendAssetHandler(
 	subFS fs.FS,
 	fileServer http.Handler,
 	pluginSvc pluginsvc.Service,
+	devProxy http.Handler,
+	workspaceBasePath string,
 ) func(r *ghttp.Request) {
 	return func(r *ghttp.Request) {
-		path := strings.TrimPrefix(r.URL.Path, "/")
-		if path == "" {
-			path = "index.html"
-		}
-		if serveRuntimePluginAsset(r, pluginSvc, path) {
+		requestPath := normalizeRequestPath(r.URL.Path)
+		if serveRuntimePluginAsset(r, pluginSvc, requestPath) {
 			return
 		}
-		if serveEmbeddedFrontendAsset(r, subFS, fileServer, path) {
+		workspacePath, ok := trimWorkspaceRequestPath(requestPath, workspaceBasePath)
+		if !ok {
+			r.Response.WriteStatus(http.StatusNotFound)
+			r.ExitAll()
+			return
+		}
+		if devProxy != nil {
+			serveFrontendDevProxy(r, devProxy, requestPath, workspaceBasePath)
+			r.ExitAll()
+			return
+		}
+		if serveEmbeddedFrontendAsset(r, subFS, fileServer, workspacePath) {
 			return
 		}
 		serveSPAFallback(r, fileServer)
 	}
+}
+
+// serveFrontendDevProxy forwards workspace requests to Vite. Vite requires the
+// configured base path to include its trailing slash, so exact `/admin` style
+// requests are normalized before proxying.
+func serveFrontendDevProxy(
+	r *ghttp.Request,
+	devProxy http.Handler,
+	requestPath string,
+	workspaceBasePath string,
+) {
+	proxyRequest := r.Request
+	if strings.Trim(requestPath, "/") == strings.Trim(workspaceBasePath, "/") {
+		proxyRequest = r.Request.Clone(r.Context())
+		proxyRequest.URL.Path = "/" + strings.Trim(workspaceBasePath, "/") + "/"
+		proxyRequest.URL.RawPath = ""
+	}
+	devProxy.ServeHTTP(r.Response.RawWriter(), proxyRequest)
+}
+
+// newFrontendDevServerProxy builds the optional development reverse proxy used
+// by linactl dev. Production leaves the env unset and serves embedded assets.
+func newFrontendDevServerProxy() (http.Handler, error) {
+	rawURL := strings.TrimSpace(os.Getenv(frontendDevServerURLEnv))
+	if rawURL == "" {
+		return nil, nil
+	}
+	target, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	if target.Scheme != "http" && target.Scheme != "https" {
+		return nil, url.InvalidHostError("frontend dev server URL must use http or https")
+	}
+	if strings.TrimSpace(target.Host) == "" {
+		return nil, url.InvalidHostError("frontend dev server URL must include host")
+	}
+	return httputil.NewSingleHostReverseProxy(target), nil
 }
 
 // serveRuntimePluginAsset serves versioned dynamic plugin frontend assets when
@@ -61,12 +126,9 @@ func serveRuntimePluginAsset(
 	pluginSvc pluginsvc.Service,
 	path string,
 ) bool {
-	// Runtime plugin assets must be checked before the host falls back to the
-	// embedded frontend bundle. They share the same public static entrypoint,
-	// but plugin assets are governed by plugin ID, version, and enabled state.
-	// If the host served the generic SPA assets first, a valid plugin asset URL
-	// could be swallowed by the host fallback and bypass the runtime-specific
-	// access rules that ResolveRuntimeFrontendAsset enforces.
+	// Plugin public assets must be checked before the host falls back to the
+	// embedded frontend bundle. They are governed by plugin ID, version,
+	// public_assets declarations, enabled state, and tenant availability.
 	pluginID, version, assetPath, ok := parsePluginAssetRequestPath(path)
 	if !ok {
 		return false
@@ -94,21 +156,18 @@ func serveEmbeddedFrontendAsset(
 	r *ghttp.Request,
 	subFS fs.FS,
 	fileServer http.Handler,
-	path string,
+	assetPath string,
 ) bool {
-	f, err := subFS.Open(path)
+	content, err := fs.ReadFile(subFS, assetPath)
 	if err != nil {
 		return false
 	}
-	if closeErr := f.Close(); closeErr != nil {
-		logger.Warningf(
-			r.Context(),
-			"close embedded frontend asset failed path=%s err=%v",
-			path,
-			closeErr,
-		)
+	contentType := mime.TypeByExtension(path.Ext(assetPath))
+	if contentType == "" {
+		contentType = http.DetectContentType(content)
 	}
-	fileServer.ServeHTTP(r.Response.RawWriter(), r.Request)
+	r.Response.Header().Set("Content-Type", contentType)
+	r.Response.Write(content)
 	r.ExitAll()
 	return true
 }
@@ -121,7 +180,41 @@ func serveSPAFallback(r *ghttp.Request, fileServer http.Handler) {
 	r.ExitAll()
 }
 
-// parsePluginAssetRequestPath splits one public `/plugin-assets/...` request
+// normalizeRequestPath trims the leading slash while preserving sub-paths.
+func normalizeRequestPath(rawPath string) string {
+	return strings.TrimPrefix(strings.TrimSpace(rawPath), "/")
+}
+
+// normalizeWorkspaceRequestBasePath returns a slashless workspace base path for
+// prefix checks against request paths.
+func normalizeWorkspaceRequestBasePath(basePath string) string {
+	normalized := strings.Trim(strings.TrimSpace(basePath), "/")
+	if normalized == "" {
+		return "admin"
+	}
+	return normalized
+}
+
+// trimWorkspaceRequestPath removes the workspace base path from an incoming
+// request and returns the embedded-asset path that should be served.
+func trimWorkspaceRequestPath(requestPath string, workspaceBasePath string) (string, bool) {
+	normalizedRequestPath := strings.Trim(requestPath, "/")
+	if normalizedRequestPath == "" {
+		return "", false
+	}
+	if normalizedRequestPath != workspaceBasePath &&
+		!strings.HasPrefix(normalizedRequestPath, workspaceBasePath+"/") {
+		return "", false
+	}
+	assetPath := strings.TrimPrefix(normalizedRequestPath, workspaceBasePath)
+	assetPath = strings.Trim(assetPath, "/")
+	if assetPath == "" {
+		return "index.html", true
+	}
+	return assetPath, true
+}
+
+// parsePluginAssetRequestPath splits one public `/x-assets/...` request
 // path into plugin identity, version, and relative asset path parts.
 func parsePluginAssetRequestPath(path string) (
 	pluginID string,
@@ -135,7 +228,7 @@ func parsePluginAssetRequestPath(path string) (
 	}
 
 	pathParts := strings.Split(normalizedPath, "/")
-	if len(pathParts) < 3 || pathParts[0] != "plugin-assets" {
+	if len(pathParts) < 3 || pathParts[0] != pluginhost.HostedAssetPathSegment {
 		return "", "", "", false
 	}
 	if strings.TrimSpace(pathParts[1]) == "" || strings.TrimSpace(pathParts[2]) == "" {

@@ -102,7 +102,7 @@ func TestOpenAPII18nBundlesCoverCurrentMetadata(t *testing.T) {
 	if testsupport.OfficialPluginsWorkspaceReady(repoRoot) {
 		requiredKeys = append(requiredKeys,
 			"plugins.linapro_monitor_loginlog.api.loginlog.v1.ListReq.meta.tags",
-			"plugins.linapro_demo_dynamic.paths.get.backend_summary.meta.summary",
+			"plugins.linapro_demo_dynamic.paths.get.api.v1.backend_summary.meta.summary",
 		)
 	}
 

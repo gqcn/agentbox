@@ -8,15 +8,15 @@ import (
 	"lina-core/pkg/menutype"
 )
 
-// TestConvertToRouteItemsBuildsIframeRouteForHostedPluginAssets verifies hosted
+// TestConvertToRouteItemsBuildsIframeRouteForHostedXAssets verifies hosted
 // asset menus default to iframe routes when they are not marked as new-window
 // or embedded-mount entries.
-func TestConvertToRouteItemsBuildsIframeRouteForHostedPluginAssets(t *testing.T) {
+func TestConvertToRouteItemsBuildsIframeRouteForHostedXAssets(t *testing.T) {
 	routes := convertToRouteItems([]*menusvc.MenuItem{
 		{
 			Id:      101,
 			Name:    "Runtime Iframe Entry",
-			Path:    "/plugin-assets/plugin-runtime-demo/v0.1.0/index.html",
+			Path:    "/x-assets/plugin-runtime-demo/v0.1.0/index.html",
 			Type:    menutype.Menu.String(),
 			IsFrame: 0,
 			Visible: 1,
@@ -32,22 +32,22 @@ func TestConvertToRouteItemsBuildsIframeRouteForHostedPluginAssets(t *testing.T)
 	if route.Component != "IFrameView" {
 		t.Fatalf("expected iframe route component, got %s", route.Component)
 	}
-	if route.Meta == nil || route.Meta.IframeSrc != "/plugin-assets/plugin-runtime-demo/v0.1.0/index.html" {
+	if route.Meta == nil || route.Meta.IframeSrc != "/x-assets/plugin-runtime-demo/v0.1.0/index.html" {
 		t.Fatalf("expected iframe src to be preserved, got %#v", route.Meta)
 	}
-	if route.Path == "/plugin-assets/plugin-runtime-demo/v0.1.0/index.html" {
+	if route.Path == "/x-assets/plugin-runtime-demo/v0.1.0/index.html" {
 		t.Fatalf("expected virtual router path instead of raw asset path, got %s", route.Path)
 	}
 }
 
-// TestConvertToRouteItemsBuildsNewWindowRouteForHostedPluginAssets verifies
+// TestConvertToRouteItemsBuildsNewWindowRouteForHostedXAssets verifies
 // hosted asset menus marked as frames become new-window link routes.
-func TestConvertToRouteItemsBuildsNewWindowRouteForHostedPluginAssets(t *testing.T) {
+func TestConvertToRouteItemsBuildsNewWindowRouteForHostedXAssets(t *testing.T) {
 	routes := convertToRouteItems([]*menusvc.MenuItem{
 		{
 			Id:      102,
 			Name:    "Runtime New Window Entry",
-			Path:    "/plugin-assets/plugin-runtime-demo/v0.1.0/index.html",
+			Path:    "/x-assets/plugin-runtime-demo/v0.1.0/index.html",
 			Type:    menutype.Menu.String(),
 			IsFrame: 1,
 			Visible: 1,
@@ -63,7 +63,7 @@ func TestConvertToRouteItemsBuildsNewWindowRouteForHostedPluginAssets(t *testing
 	if route.Component != "BasicLayout" {
 		t.Fatalf("expected new-window route to keep basic layout component, got %s", route.Component)
 	}
-	if route.Meta == nil || route.Meta.Link != "/plugin-assets/plugin-runtime-demo/v0.1.0/index.html" {
+	if route.Meta == nil || route.Meta.Link != "/x-assets/plugin-runtime-demo/v0.1.0/index.html" {
 		t.Fatalf("expected link target to be preserved, got %#v", route.Meta)
 	}
 	if !route.Meta.OpenInNewWindow {
@@ -71,15 +71,15 @@ func TestConvertToRouteItemsBuildsNewWindowRouteForHostedPluginAssets(t *testing
 	}
 }
 
-// TestConvertToRouteItemsBuildsEmbeddedMountRouteForHostedPluginAssets verifies
+// TestConvertToRouteItemsBuildsEmbeddedMountRouteForHostedXAssets verifies
 // embedded-mount runtime menus keep the hosted shell component and forward the
 // target URL through query parameters.
-func TestConvertToRouteItemsBuildsEmbeddedMountRouteForHostedPluginAssets(t *testing.T) {
+func TestConvertToRouteItemsBuildsEmbeddedMountRouteForHostedXAssets(t *testing.T) {
 	routes := convertToRouteItems([]*menusvc.MenuItem{
 		{
 			Id:         103,
 			Name:       "Runtime Embedded Entry",
-			Path:       "/plugin-assets/plugin-runtime-demo/v0.1.0/mount.js",
+			Path:       "/x-assets/plugin-runtime-demo/v0.1.0/mount.js",
 			Component:  "system/plugin/dynamic-page",
 			Type:       menutype.Menu.String(),
 			IsFrame:    0,
@@ -103,10 +103,10 @@ func TestConvertToRouteItemsBuildsEmbeddedMountRouteForHostedPluginAssets(t *tes
 	if route.Meta.Query["pluginAccessMode"] != "embedded-mount" {
 		t.Fatalf("expected embedded access mode query, got %#v", route.Meta.Query)
 	}
-	if route.Meta.Query["embeddedSrc"] != "/plugin-assets/plugin-runtime-demo/v0.1.0/mount.js" {
+	if route.Meta.Query["embeddedSrc"] != "/x-assets/plugin-runtime-demo/v0.1.0/mount.js" {
 		t.Fatalf("expected embedded asset url to be preserved, got %#v", route.Meta.Query)
 	}
-	if route.Path == "/plugin-assets/plugin-runtime-demo/v0.1.0/mount.js" {
+	if route.Path == "/x-assets/plugin-runtime-demo/v0.1.0/mount.js" {
 		t.Fatalf("expected virtual host route instead of raw asset path, got %s", route.Path)
 	}
 }

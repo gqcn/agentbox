@@ -38,6 +38,7 @@ type staticConfigCaches struct {
 	serverExtensions staticConfigBox[ServerExtensionsConfig]
 	session          staticConfigBox[SessionConfig]
 	upload           staticConfigBox[UploadConfig]
+	workspace        staticConfigBox[WorkspaceConfig]
 }
 
 // processStaticConfigCaches is the singleton cache registry used by the config
@@ -207,6 +208,15 @@ func cloneSessionConfig(cfg *SessionConfig) *SessionConfig {
 // cloneUploadConfig returns a detached copy so runtime max-size overrides stay
 // request-local and never mutate the cached upload path/default size.
 func cloneUploadConfig(cfg *UploadConfig) *UploadConfig {
+	if cfg == nil {
+		return nil
+	}
+	cloned := *cfg
+	return &cloned
+}
+
+// cloneWorkspaceConfig returns a detached copy of the cached workspace routing config.
+func cloneWorkspaceConfig(cfg *WorkspaceConfig) *WorkspaceConfig {
 	if cfg == nil {
 		return nil
 	}

@@ -33,8 +33,8 @@ type MenuRouteMeta struct {
 	HideInBreadcrumb bool              `json:"hideInBreadcrumb,omitempty" dc:"Whether to hide in breadcrumbs" eg:"false"`
 	HideInTab        bool              `json:"hideInTab,omitempty" dc:"Whether to hide in tabs" eg:"false"`
 	KeepAlive        bool              `json:"keepAlive,omitempty" dc:"Whether to cache the page" eg:"true"`
-	IframeSrc        string            `json:"iframeSrc,omitempty" dc:"The target address in iframe mode, usually used to host inline hosted pages" eg:"/plugin-assets/plugin-runtime-demo/v0.1.0/index.html"`
-	Link             string            `json:"link,omitempty" dc:"The target address in new tab mode, which will be opened directly by the host when the menu is clicked." eg:"/plugin-assets/plugin-runtime-demo/v0.1.0/index.html"`
+	IframeSrc        string            `json:"iframeSrc,omitempty" dc:"The target address in iframe mode, usually used to host inline hosted pages" eg:"/x-assets/plugin-runtime-demo/v0.1.0/index.html"`
+	Link             string            `json:"link,omitempty" dc:"The target address in new tab mode, which will be opened directly by the host when the menu is clicked." eg:"/x-assets/plugin-runtime-demo/v0.1.0/index.html"`
 	OpenInNewWindow  bool              `json:"openInNewWindow,omitempty" dc:"Whether to open the current menu in a new window or tab" eg:"true"`
 	Query            map[string]string `json:"query,omitempty" dc:"Query parameters attached when the menu is opened, for host inline mounting or normal page recovery context" eg:"{\"pluginAccessMode\":\"embedded-mount\"}"`
 	Order            int               `json:"order" dc:"Sorting number, 0 represents the highest priority, the smaller the value, the higher it is." eg:"1"`

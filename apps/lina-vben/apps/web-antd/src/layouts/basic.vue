@@ -197,7 +197,7 @@ function replacePluginAssetVersion(
     return value;
   }
 
-  const match = value.match(/(\/plugin-assets\/([^/]+)\/)([^/]+)(\/.*)/);
+  const match = value.match(/(\/x-assets\/([^/]+)\/)([^/]+)(\/.*)/);
   if (!match?.[1] || !match[2] || !match[4] || match[2] !== pluginId) {
     return value;
   }
@@ -303,7 +303,7 @@ function resolvePluginIdFromAssetURL(value: unknown) {
   if (typeof value !== 'string' || !value) {
     return '';
   }
-  return value.match(/\/plugin-assets\/([^/]+)\/[^/]+\//)?.[1] ?? '';
+  return value.match(/\/x-assets\/([^/]+)\/[^/]+\//)?.[1] ?? '';
 }
 
 function findPluginIframeElement(pluginId = '') {
@@ -313,10 +313,10 @@ function findPluginIframeElement(pluginId = '') {
 
   const selectors = pluginId
     ? [
-        `iframe[src*="/plugin-assets/${pluginId}/"]`,
+        `iframe[src*="/x-assets/${pluginId}/"]`,
         `iframe[src*="${pluginId}/"]`,
       ]
-    : ['iframe[src*="/plugin-assets/"]', 'iframe'];
+    : ['iframe[src*="/x-assets/"]', 'iframe'];
 
   for (const selector of selectors) {
     const iframe = document.querySelector(selector);
@@ -370,7 +370,7 @@ function findPluginRefreshPath(pluginId: string, version = '') {
     const normalizedPath = route.path.replace(/^\//, '');
     if (
       normalizedPath.startsWith(`${pluginId}-`) ||
-      normalizedPath.startsWith(`plugin-assets/${pluginId}/`) ||
+      normalizedPath.startsWith(`x-assets/${pluginId}/`) ||
       normalizedPath.startsWith(`plugins/${pluginId}/`)
     ) {
       if (!fallbackPath) {

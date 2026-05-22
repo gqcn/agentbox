@@ -10,6 +10,7 @@ import (
 // Service defines the complete config service contract by composing narrower
 // categorized interfaces for callers that need a smaller dependency surface.
 type Service interface {
+	WorkspaceConfigReader
 	ClusterConfigReader
 	AuthConfigReader
 	LoginConfigReader
@@ -21,6 +22,14 @@ type Service interface {
 	PluginConfigReader
 	UploadConfigReader
 	RuntimeParamSyncer
+}
+
+// WorkspaceConfigReader reads the built-in admin workspace routing settings.
+type WorkspaceConfigReader interface {
+	// GetWorkspace reads the admin workspace routing config from configuration file.
+	GetWorkspace(ctx context.Context) *WorkspaceConfig
+	// GetWorkspaceBasePath returns the normalized non-root admin workspace entry path.
+	GetWorkspaceBasePath(ctx context.Context) string
 }
 
 // ClusterConfigReader reads cluster topology settings.

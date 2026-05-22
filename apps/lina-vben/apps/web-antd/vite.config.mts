@@ -474,7 +474,7 @@ export default defineConfig(async () => {
             target: 'http://localhost:9120',
             ws: true,
           },
-          '/plugin-assets': {
+          '/x-assets': {
             changeOrigin: true,
             // Runtime plugin static assets are hosted by the backend even in
             // dev mode, so the frontend dev server must proxy these requests.

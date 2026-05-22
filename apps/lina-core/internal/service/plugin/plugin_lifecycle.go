@@ -588,7 +588,7 @@ func (s *serviceImpl) IsInstalled(ctx context.Context, pluginID string) bool {
 // IsEnabled returns whether a plugin is enabled.
 func (s *serviceImpl) IsEnabled(ctx context.Context, pluginID string) bool {
 	s.ensureRuntimeCacheFreshBestEffort(ctx, "is_enabled")
-	return s.integrationSvc.IsEnabled(ctx, pluginID)
+	return s.integrationSvc.CanExposeBusinessEntries(ctx, pluginID)
 }
 
 // EnsureTenantPluginDisableAllowed runs source and dynamic lifecycle

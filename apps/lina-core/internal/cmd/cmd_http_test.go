@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"reflect"
 	"strings"
@@ -316,7 +317,7 @@ func TestDynamicPluginRootRoutesPrecedeSPAFallback(t *testing.T) {
 
 	runtime := newRouteBindingTestRuntime(ctx)
 	bindHostAPIRoutes(ctx, server, runtime)
-	if err := bindFrontendAssetRoutes(ctx, server, runtime.pluginSvc); err != nil {
+	if err := bindFrontendAssetRoutes(ctx, server, runtime.pluginSvc, "/admin"); err != nil {
 		t.Fatalf("bind frontend asset routes: %v", err)
 	}
 
@@ -330,7 +331,7 @@ func TestDynamicPluginRootRoutesPrecedeSPAFallback(t *testing.T) {
 	})
 
 	response, err := http.Get(fmt.Sprintf(
-		"http://127.0.0.1:%d/x/plugin-dev-route-missing/backend-summary",
+		"http://127.0.0.1:%d/x/plugin-dev-route-missing/api/v1/backend-summary",
 		server.GetListenedPort(),
 	))
 	if err != nil {
@@ -354,6 +355,211 @@ func TestDynamicPluginRootRoutesPrecedeSPAFallback(t *testing.T) {
 	}
 	if response.Header.Get("Location") != "" {
 		t.Fatalf("expected no SPA redirect for dynamic route, got location=%q", response.Header.Get("Location"))
+	}
+}
+
+// TestFrontendAssetFallbackIsScopedToWorkspaceBasePath verifies the final SPA
+// fallback only serves the built-in workspace under the configured base path.
+func TestFrontendAssetFallbackIsScopedToWorkspaceBasePath(t *testing.T) {
+	ctx := context.Background()
+	server := ghttp.GetServer("cmd-http-workspace-fallback-" + guid.S())
+	server.SetPort(0)
+	server.SetDumpRouterMap(false)
+
+	runtime := newRouteBindingTestRuntime(ctx)
+	if err := bindFrontendAssetRoutes(ctx, server, runtime.pluginSvc, "/admin"); err != nil {
+		t.Fatalf("bind frontend asset routes: %v", err)
+	}
+
+	if err := server.Start(); err != nil {
+		t.Fatalf("start workspace fallback test server: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := server.Shutdown(); err != nil {
+			t.Fatalf("shutdown workspace fallback test server: %v", err)
+		}
+	})
+
+	adminResp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/admin", server.GetListenedPort()))
+	if err != nil {
+		t.Fatalf("request admin workspace base: %v", err)
+	}
+	defer func() {
+		if closeErr := adminResp.Body.Close(); closeErr != nil {
+			t.Fatalf("close admin workspace response body: %v", closeErr)
+		}
+	}()
+	if adminResp.StatusCode != http.StatusOK {
+		adminBody, readErr := io.ReadAll(adminResp.Body)
+		if readErr != nil {
+			t.Fatalf("read admin workspace response body: %v", readErr)
+		}
+		for _, route := range server.GetRoutes() {
+			t.Logf("registered route method=%s route=%s", route.Method, route.Route)
+		}
+		t.Fatalf("expected admin workspace status 200, got %d body=%q", adminResp.StatusCode, string(adminBody))
+	}
+
+	rootResp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/", server.GetListenedPort()))
+	if err != nil {
+		t.Fatalf("request root path: %v", err)
+	}
+	defer func() {
+		if closeErr := rootResp.Body.Close(); closeErr != nil {
+			t.Fatalf("close root response body: %v", closeErr)
+		}
+	}()
+	if rootResp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected root path to avoid SPA fallback with 404, got %d", rootResp.StatusCode)
+	}
+}
+
+// TestTrimWorkspaceRequestPath verifies workspace base stripping used by the
+// final frontend fallback is stable for base and nested admin routes.
+func TestTrimWorkspaceRequestPath(t *testing.T) {
+	tests := []struct {
+		name      string
+		path      string
+		basePath  string
+		wantPath  string
+		wantMatch bool
+	}{
+		{
+			name:      "base path",
+			path:      "admin",
+			basePath:  "admin",
+			wantPath:  "index.html",
+			wantMatch: true,
+		},
+		{
+			name:      "nested route",
+			path:      "admin/system/user",
+			basePath:  "admin",
+			wantPath:  "system/user",
+			wantMatch: true,
+		},
+		{
+			name:      "prefix sibling",
+			path:      "administer",
+			basePath:  "admin",
+			wantMatch: false,
+		},
+		{
+			name:      "root path",
+			path:      "",
+			basePath:  "admin",
+			wantMatch: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotPath, gotMatch := trimWorkspaceRequestPath(tt.path, tt.basePath)
+			if gotMatch != tt.wantMatch {
+				t.Fatalf("expected match=%v, got %v", tt.wantMatch, gotMatch)
+			}
+			if gotPath != tt.wantPath {
+				t.Fatalf("expected path=%q, got %q", tt.wantPath, gotPath)
+			}
+		})
+	}
+}
+
+// TestFrontendAssetFallbackProxiesWorkspaceBasePathInDevelopment verifies the
+// optional Vite proxy is scoped to the workspace path and leaves root routes free.
+func TestFrontendAssetFallbackProxiesWorkspaceBasePathInDevelopment(t *testing.T) {
+	ctx := context.Background()
+	devServer := http.Server{
+		Addr: "127.0.0.1:0",
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/admin/" && r.URL.Path != "/admin/system/user" {
+				t.Errorf("expected proxied workspace path, got %s", r.URL.Path)
+			}
+			w.Header().Set("Content-Type", "text/plain")
+			if _, err := w.Write([]byte("vite-admin-dev:" + r.URL.Path)); err != nil {
+				t.Errorf("write dev proxy response: %v", err)
+			}
+		}),
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen frontend dev server: %v", err)
+	}
+	go func() {
+		if serveErr := devServer.Serve(listener); serveErr != nil && serveErr != http.ErrServerClosed {
+			t.Errorf("serve frontend dev server: %v", serveErr)
+		}
+	}()
+	t.Cleanup(func() {
+		if shutdownErr := devServer.Shutdown(context.Background()); shutdownErr != nil {
+			t.Fatalf("shutdown frontend dev server: %v", shutdownErr)
+		}
+	})
+	t.Setenv(frontendDevServerURLEnv, "http://"+listener.Addr().String())
+
+	server := ghttp.GetServer("cmd-http-workspace-dev-proxy-" + guid.S())
+	server.SetPort(0)
+	server.SetDumpRouterMap(false)
+
+	runtime := newRouteBindingTestRuntime(ctx)
+	if err = bindFrontendAssetRoutes(ctx, server, runtime.pluginSvc, "/admin"); err != nil {
+		t.Fatalf("bind frontend asset routes: %v", err)
+	}
+
+	if err = server.Start(); err != nil {
+		t.Fatalf("start workspace dev proxy test server: %v", err)
+	}
+	t.Cleanup(func() {
+		if shutdownErr := server.Shutdown(); shutdownErr != nil {
+			t.Fatalf("shutdown workspace dev proxy test server: %v", shutdownErr)
+		}
+	})
+
+	baseResp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/admin", server.GetListenedPort()))
+	if err != nil {
+		t.Fatalf("request proxied admin workspace base: %v", err)
+	}
+	defer func() {
+		if closeErr := baseResp.Body.Close(); closeErr != nil {
+			t.Fatalf("close proxied admin base response body: %v", closeErr)
+		}
+	}()
+	baseBody, err := io.ReadAll(baseResp.Body)
+	if err != nil {
+		t.Fatalf("read proxied admin base response body: %v", err)
+	}
+	if string(baseBody) != "vite-admin-dev:/admin/" {
+		t.Fatalf("expected normalized dev proxy base body, got %q", string(baseBody))
+	}
+
+	adminResp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/admin/system/user", server.GetListenedPort()))
+	if err != nil {
+		t.Fatalf("request proxied admin workspace path: %v", err)
+	}
+	defer func() {
+		if closeErr := adminResp.Body.Close(); closeErr != nil {
+			t.Fatalf("close proxied admin response body: %v", closeErr)
+		}
+	}()
+	body, err := io.ReadAll(adminResp.Body)
+	if err != nil {
+		t.Fatalf("read proxied admin response body: %v", err)
+	}
+	if string(body) != "vite-admin-dev:/admin/system/user" {
+		t.Fatalf("expected dev proxy body, got %q", string(body))
+	}
+
+	rootResp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/", server.GetListenedPort()))
+	if err != nil {
+		t.Fatalf("request root path with dev proxy enabled: %v", err)
+	}
+	defer func() {
+		if closeErr := rootResp.Body.Close(); closeErr != nil {
+			t.Fatalf("close root response body: %v", closeErr)
+		}
+	}()
+	if rootResp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected root path to avoid dev proxy fallback with 404, got %d", rootResp.StatusCode)
 	}
 }
 
@@ -430,7 +636,7 @@ func TestParsePluginAssetRequestPath(t *testing.T) {
 	}{
 		{
 			name:          "hosted asset file",
-			path:          "plugin-assets/linapro-demo-dynamic/v0.1.0/standalone.html",
+			path:          "x-assets/linapro-demo-dynamic/v0.1.0/standalone.html",
 			wantPluginID:  "linapro-demo-dynamic",
 			wantVersion:   "v0.1.0",
 			wantAssetPath: "standalone.html",
@@ -438,7 +644,7 @@ func TestParsePluginAssetRequestPath(t *testing.T) {
 		},
 		{
 			name:          "embedded mount entry",
-			path:          "/plugin-assets/linapro-demo-dynamic/v0.1.0/mount.js",
+			path:          "/x-assets/linapro-demo-dynamic/v0.1.0/mount.js",
 			wantPluginID:  "linapro-demo-dynamic",
 			wantVersion:   "v0.1.0",
 			wantAssetPath: "mount.js",
@@ -446,7 +652,7 @@ func TestParsePluginAssetRequestPath(t *testing.T) {
 		},
 		{
 			name:          "version root path",
-			path:          "/plugin-assets/linapro-demo-dynamic/v0.1.0/",
+			path:          "/x-assets/linapro-demo-dynamic/v0.1.0/",
 			wantPluginID:  "linapro-demo-dynamic",
 			wantVersion:   "v0.1.0",
 			wantAssetPath: "",
@@ -459,7 +665,7 @@ func TestParsePluginAssetRequestPath(t *testing.T) {
 		},
 		{
 			name:   "missing version",
-			path:   "/plugin-assets/linapro-demo-dynamic",
+			path:   "/x-assets/linapro-demo-dynamic",
 			wantOK: false,
 		},
 	}

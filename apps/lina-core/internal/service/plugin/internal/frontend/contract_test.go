@@ -13,6 +13,7 @@ import (
 	"lina-core/internal/service/plugin/internal/catalog"
 	pluginfrontend "lina-core/internal/service/plugin/internal/frontend"
 	"lina-core/internal/service/plugin/internal/testutil"
+	"lina-core/pkg/pluginhost"
 )
 
 // TestValidateHostedMenuBindingsAcceptsHostedRuntimeModes verifies that iframe,
@@ -31,12 +32,12 @@ func TestValidateHostedMenuBindingsAcceptsHostedRuntimeModes(t *testing.T) {
 		"v0.3.0",
 		[]*catalog.ArtifactFrontendAsset{
 			{
-				Path:          "index.html",
+				Path:          "frontend/pages/index.html",
 				ContentBase64: base64.StdEncoding.EncodeToString([]byte("<html><body>hosted entry</body></html>")),
 				ContentType:   "text/html; charset=utf-8",
 			},
 			{
-				Path:          "mount.js",
+				Path:          "frontend/pages/mount.js",
 				ContentBase64: base64.StdEncoding.EncodeToString([]byte("export function mount() {}")),
 				ContentType:   "application/javascript",
 			},
@@ -75,7 +76,7 @@ func TestValidateHostedMenuBindingsAcceptsHostedRuntimeModes(t *testing.T) {
 			MenuKey:    "plugin:plugin-dev-dynamic-bindings:embedded-entry",
 			Name:       "Hosted embedded entry",
 			Path:       hostedBaseURL + "mount.js",
-			Component:  pluginfrontend.DynamicPageComponentPath,
+			Component:  pluginhost.DynamicPageComponentPath,
 			QueryParam: `{"pluginAccessMode":"embedded-mount"}`,
 			IsFrame:    0,
 		},
@@ -102,7 +103,7 @@ func TestValidateHostedMenuBindingsRejectsBrokenEmbeddedMountContract(t *testing
 		"v0.3.1",
 		[]*catalog.ArtifactFrontendAsset{
 			{
-				Path:          "index.html",
+				Path:          "frontend/pages/index.html",
 				ContentBase64: base64.StdEncoding.EncodeToString([]byte("<html><body>hosted entry</body></html>")),
 				ContentType:   "text/html; charset=utf-8",
 			},
@@ -129,7 +130,7 @@ func TestValidateHostedMenuBindingsRejectsBrokenEmbeddedMountContract(t *testing
 			MenuKey:    "plugin:plugin-dev-dynamic-broken-bindings:embedded-entry",
 			Name:       "Broken embedded entry",
 			Path:       hostedBaseURL + "index.html",
-			Component:  pluginfrontend.DynamicPageComponentPath,
+			Component:  pluginhost.DynamicPageComponentPath,
 			QueryParam: `{"pluginAccessMode":"embedded-mount"}`,
 			IsFrame:    0,
 		},

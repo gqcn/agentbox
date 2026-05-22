@@ -1,5 +1,7 @@
 import type { Locator, Page } from '@playwright/test';
 
+import { workspacePath } from '../fixtures/config';
+
 export class DashboardPage {
   constructor(private page: Page) {}
 
@@ -48,13 +50,13 @@ export class DashboardPage {
   }
 
   async gotoAnalytics() {
-    await this.page.goto('/dashboard/analytics');
+    await this.page.goto(workspacePath('/dashboard/analytics'));
     await this.page.waitForLoadState('networkidle');
     await this.analyticsPage.waitFor({ state: 'visible' });
   }
 
   async gotoWorkspace() {
-    await this.page.goto('/dashboard/workspace');
+    await this.page.goto(workspacePath('/dashboard/workspace'));
     await this.page.waitForLoadState('networkidle');
     await this.workspacePage.waitFor({ state: 'visible' });
   }

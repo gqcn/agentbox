@@ -19,7 +19,7 @@ func TestBuildPluginRouteReviewItemsBuildsPublicRouteMetadata(t *testing.T) {
 		[]*pluginbridge.RouteContract{
 			{
 				Method:      http.MethodGet,
-				Path:        "/review-summary",
+				Path:        "/api/v1/review-summary",
 				Access:      pluginbridge.AccessLogin,
 				Permission:  "plugin-dev-route-review:review:query",
 				Summary:     "查询评审摘要",
@@ -28,7 +28,7 @@ func TestBuildPluginRouteReviewItemsBuildsPublicRouteMetadata(t *testing.T) {
 			nil,
 			{
 				Method:  http.MethodPost,
-				Path:    "/public-ping",
+				Path:    "/api/v1/public-ping",
 				Access:  pluginbridge.AccessPublic,
 				Summary: "公开探活",
 			},
@@ -42,7 +42,7 @@ func TestBuildPluginRouteReviewItemsBuildsPublicRouteMetadata(t *testing.T) {
 	if items[0].Method != http.MethodGet {
 		t.Fatalf("expected first route method GET, got %s", items[0].Method)
 	}
-	if items[0].PublicPath != "/x/plugin-dev-route-review/review-summary" {
+	if items[0].PublicPath != "/x/plugin-dev-route-review/api/v1/review-summary" {
 		t.Fatalf("unexpected first route public path: %s", items[0].PublicPath)
 	}
 	if items[0].Access != pluginbridge.AccessLogin {
@@ -61,7 +61,7 @@ func TestBuildPluginRouteReviewItemsBuildsPublicRouteMetadata(t *testing.T) {
 	if items[1].Method != http.MethodPost {
 		t.Fatalf("expected second route method POST, got %s", items[1].Method)
 	}
-	if items[1].PublicPath != "/x/plugin-dev-route-review/public-ping" {
+	if items[1].PublicPath != "/x/plugin-dev-route-review/api/v1/public-ping" {
 		t.Fatalf("unexpected second route public path: %s", items[1].PublicPath)
 	}
 	if items[1].Access != pluginbridge.AccessPublic {
@@ -69,6 +69,46 @@ func TestBuildPluginRouteReviewItemsBuildsPublicRouteMetadata(t *testing.T) {
 	}
 	if items[1].Permission != "" {
 		t.Fatalf("expected public route permission to stay empty, got %s", items[1].Permission)
+	}
+}
+
+// TestBuildPluginRouteReviewItemsPreservesPluginOwnedPathContent verifies
+// route review public paths only force `/x/{pluginId}` and preserve plugin-local
+// path content such as `/api/v2`, `/interface/m1`, and `/graphql`.
+func TestBuildPluginRouteReviewItemsPreservesPluginOwnedPathContent(t *testing.T) {
+	items := buildPluginRouteReviewItems(
+		"plugin-dev-route-review",
+		[]*pluginbridge.RouteContract{
+			{
+				Method: http.MethodGet,
+				Path:   "/api/v2/review-summary",
+				Access: pluginbridge.AccessLogin,
+			},
+			{
+				Method: http.MethodPost,
+				Path:   "/interface/m1/review-summary",
+				Access: pluginbridge.AccessLogin,
+			},
+			{
+				Method: http.MethodPost,
+				Path:   "/graphql",
+				Access: pluginbridge.AccessPublic,
+			},
+		},
+	)
+
+	expected := []string{
+		"/x/plugin-dev-route-review/api/v2/review-summary",
+		"/x/plugin-dev-route-review/interface/m1/review-summary",
+		"/x/plugin-dev-route-review/graphql",
+	}
+	if len(items) != len(expected) {
+		t.Fatalf("expected %d projected route items, got %d", len(expected), len(items))
+	}
+	for index, expectedPath := range expected {
+		if items[index].PublicPath != expectedPath {
+			t.Fatalf("expected item %d public path %s, got %s", index, expectedPath, items[index].PublicPath)
+		}
 	}
 }
 
@@ -80,7 +120,7 @@ func TestBuildPluginRouteReviewItemsSkipsBlankPluginID(t *testing.T) {
 		[]*pluginbridge.RouteContract{
 			{
 				Method: http.MethodGet,
-				Path:   "/review-summary",
+				Path:   "/api/v1/review-summary",
 			},
 		},
 	)

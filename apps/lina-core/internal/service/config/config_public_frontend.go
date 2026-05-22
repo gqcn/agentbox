@@ -139,11 +139,12 @@ var protectedConfigKeys = appendProtectedConfigKeys()
 
 // PublicFrontendConfig describes the safe frontend settings exposed by the host.
 type PublicFrontendConfig struct {
-	App  PublicFrontendAppConfig  `json:"app"`  // App groups brand-related settings.
-	Auth PublicFrontendAuthConfig `json:"auth"` // Auth groups login-page copy settings.
-	User PublicFrontendUserConfig `json:"user"` // User groups user-facing fallback settings.
-	UI   PublicFrontendUIConfig   `json:"ui"`   // UI groups theme, layout, and watermark settings.
-	Cron PublicFrontendCronConfig `json:"cron"` // Cron groups public-safe scheduled-job capability flags.
+	App       PublicFrontendAppConfig       `json:"app"`       // App groups brand-related settings.
+	Auth      PublicFrontendAuthConfig      `json:"auth"`      // Auth groups login-page copy settings.
+	User      PublicFrontendUserConfig      `json:"user"`      // User groups user-facing fallback settings.
+	UI        PublicFrontendUIConfig        `json:"ui"`        // UI groups theme, layout, and watermark settings.
+	Cron      PublicFrontendCronConfig      `json:"cron"`      // Cron groups public-safe scheduled-job capability flags.
+	Workspace PublicFrontendWorkspaceConfig `json:"workspace"` // Workspace exposes startup-scoped admin workspace settings.
 }
 
 // PublicFrontendAppConfig stores brand-related public settings.
@@ -199,6 +200,11 @@ type PublicFrontendCronShellConfig struct {
 // PublicFrontendCronTimezoneConfig stores the frontend-visible default timezone.
 type PublicFrontendCronTimezoneConfig struct {
 	Current string `json:"current"` // Current is the current host timezone identifier.
+}
+
+// PublicFrontendWorkspaceConfig stores public-safe admin workspace routing settings.
+type PublicFrontendWorkspaceConfig struct {
+	BasePath string `json:"basePath"` // BasePath is the non-root admin workspace entry path.
 }
 
 // PublicFrontendSettingSpecs returns all built-in public frontend setting specs.
@@ -373,6 +379,9 @@ func (s *serviceImpl) GetPublicFrontend(ctx context.Context) (*PublicFrontendCon
 			Timezone: PublicFrontendCronTimezoneConfig{
 				Current: resolveCurrentSystemTimezone(),
 			},
+		},
+		Workspace: PublicFrontendWorkspaceConfig{
+			BasePath: s.GetWorkspaceBasePath(ctx),
 		},
 	}, nil
 }

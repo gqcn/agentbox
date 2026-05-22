@@ -55,6 +55,9 @@ func (c *ControllerV1) Frontend(ctx context.Context, _ *v1.FrontendReq) (res *v1
 				Current: cfg.Cron.Timezone.Current,
 			},
 		},
+		Workspace: v1.FrontendWorkspaceRes{
+			BasePath: cfg.Workspace.BasePath,
+		},
 	}, nil
 }
 

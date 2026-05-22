@@ -136,7 +136,7 @@ func CreateTestRuntimePluginDirWithFrontendAssets(
 	WriteTestFile(
 		t,
 		filepath.Join(pluginDir, "plugin.yaml"),
-		"id: "+pluginID+"\nname: "+pluginName+"\nversion: "+version+"\ntype: dynamic\nscope_nature: tenant_aware\nsupports_multi_tenant: true\ndefault_install_mode: tenant_scoped\n",
+		"id: "+pluginID+"\nname: "+pluginName+"\nversion: "+version+"\ntype: dynamic\nscope_nature: tenant_aware\nsupports_multi_tenant: true\ndefault_install_mode: tenant_scoped\npublic_assets:\n  - source: frontend/pages\n    mount: /\n",
 	)
 	supportsMultiTenant := true
 	WriteRuntimeWasmArtifact(
@@ -150,6 +150,9 @@ func CreateTestRuntimePluginDirWithFrontendAssets(
 			ScopeNature:         catalog.ScopeNatureTenantAware.String(),
 			SupportsMultiTenant: &supportsMultiTenant,
 			DefaultInstallMode:  catalog.InstallModeTenantScoped.String(),
+			PublicAssets: []*catalog.PublicAssetSpec{
+				{Source: "frontend/pages", Mount: "/"},
+			},
 		},
 		&catalog.ArtifactSpec{
 			RuntimeKind:        pluginbridge.RuntimeKindWasm,

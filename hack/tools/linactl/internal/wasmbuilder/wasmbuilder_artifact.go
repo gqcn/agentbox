@@ -37,6 +37,7 @@ func buildRuntimeArtifactContent(
 		Description:         manifest.Description,
 		Dependencies:        cloneBuildDependencySpec(manifest.Dependencies),
 		Menus:               manifest.Menus,
+		PublicAssets:        cloneBuildPublicAssetSpecs(manifest.PublicAssets),
 	})
 	if err != nil {
 		return nil, err
@@ -182,6 +183,24 @@ func cloneBuildDependencySpec(spec *dependencySpec) *dependencySpec {
 		}
 	}
 	return clone
+}
+
+func cloneBuildPublicAssetSpecs(items []*publicAssetSpec) []*publicAssetSpec {
+	if len(items) == 0 {
+		return nil
+	}
+	cloned := make([]*publicAssetSpec, 0, len(items))
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		cloned = append(cloned, &publicAssetSpec{
+			Source: strings.TrimSpace(item.Source),
+			Mount:  strings.TrimSpace(item.Mount),
+			Index:  strings.TrimSpace(item.Index),
+		})
+	}
+	return cloned
 }
 
 func appendWasmCustomSection(content []byte, name string, payload []byte) []byte {

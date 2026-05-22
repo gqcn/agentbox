@@ -31,7 +31,12 @@ type Config struct {
 	WorkDir   string
 	StartName string
 	StartArgs []string
+	Env       []string
 }
+
+// RunnerContextServiceEnvKey carries service-level environment additions to
+// ProcessRunner implementations that need to inspect them in tests.
+const RunnerContextServiceEnvKey = "LINACTL_SERVICE_ENV"
 
 // StatusRow stores one printable development service status row.
 type StatusRow struct {
@@ -58,6 +63,9 @@ func Services(root string, backendPort int, frontendPort int) []Config {
 			PIDPath: filepath.Join(pidDir, "backend.pid"),
 			LogPath: filepath.Join(tempDir, "lina-core.log"),
 			WorkDir: filepath.Join(root, "apps", "lina-core"),
+			Env: []string{
+				fmt.Sprintf("LINAPRO_FRONTEND_DEV_SERVER_URL=http://127.0.0.1:%d", frontendPort),
+			},
 		},
 		{
 			Name:      "Frontend",
@@ -160,9 +168,15 @@ func StartService(root string, stdout io.Writer, env []string, runner ProcessRun
 		return fmt.Errorf("open %s: %w", service.LogPath, err)
 	}
 
-	cmd := runner(context.Background(), service.StartName, service.StartArgs...)
+	cmd := runner(context.WithValue(context.Background(), RunnerContextServiceEnvKey, append([]string(nil), service.Env...)), service.StartName, service.StartArgs...)
 	cmd.Dir = service.WorkDir
 	cmd.Env = env
+	for _, item := range service.Env {
+		key, value, ok := strings.Cut(item, "=")
+		if ok && strings.TrimSpace(key) != "" {
+			cmd.Env = toolutil.SetEnvValue(cmd.Env, key, value)
+		}
+	}
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	cmd.Stdin = nil

@@ -51,32 +51,34 @@ type RuntimeBuildOutput struct {
 }
 
 type pluginManifest struct {
-	ID                  string          `yaml:"id"`
-	Name                string          `yaml:"name"`
-	Version             string          `yaml:"version"`
-	Type                string          `yaml:"type"`
-	ScopeNature         string          `yaml:"scope_nature"`
-	SupportsMultiTenant *bool           `yaml:"supports_multi_tenant"`
-	DefaultInstallMode  string          `yaml:"default_install_mode"`
-	Description         string          `yaml:"description"`
-	Dependencies        *dependencySpec `yaml:"dependencies"`
-	Menus               []*menuSpec     `yaml:"menus"`
+	ID                  string             `yaml:"id"`
+	Name                string             `yaml:"name"`
+	Version             string             `yaml:"version"`
+	Type                string             `yaml:"type"`
+	ScopeNature         string             `yaml:"scope_nature"`
+	SupportsMultiTenant *bool              `yaml:"supports_multi_tenant"`
+	DefaultInstallMode  string             `yaml:"default_install_mode"`
+	Description         string             `yaml:"description"`
+	Dependencies        *dependencySpec    `yaml:"dependencies"`
+	Menus               []*menuSpec        `yaml:"menus"`
+	PublicAssets        []*publicAssetSpec `yaml:"public_assets"`
 	// Capabilities is kept only to reject deprecated author-side manifest input.
 	Capabilities []string                        `yaml:"capabilities"`
 	HostServices []*pluginbridge.HostServiceSpec `yaml:"hostServices"`
 }
 
 type dynamicArtifactManifest struct {
-	ID                  string          `json:"id" yaml:"id"`
-	Name                string          `json:"name" yaml:"name"`
-	Version             string          `json:"version" yaml:"version"`
-	Type                string          `json:"type" yaml:"type"`
-	ScopeNature         string          `json:"scopeNature,omitempty" yaml:"scopeNature,omitempty"`
-	SupportsMultiTenant *bool           `json:"supportsMultiTenant,omitempty" yaml:"supportsMultiTenant,omitempty"`
-	DefaultInstallMode  string          `json:"defaultInstallMode,omitempty" yaml:"defaultInstallMode,omitempty"`
-	Description         string          `json:"description,omitempty" yaml:"description,omitempty"`
-	Dependencies        *dependencySpec `json:"dependencies,omitempty" yaml:"dependencies,omitempty"`
-	Menus               []*menuSpec     `json:"menus,omitempty" yaml:"menus,omitempty"`
+	ID                  string             `json:"id" yaml:"id"`
+	Name                string             `json:"name" yaml:"name"`
+	Version             string             `json:"version" yaml:"version"`
+	Type                string             `json:"type" yaml:"type"`
+	ScopeNature         string             `json:"scopeNature,omitempty" yaml:"scopeNature,omitempty"`
+	SupportsMultiTenant *bool              `json:"supportsMultiTenant,omitempty" yaml:"supportsMultiTenant,omitempty"`
+	DefaultInstallMode  string             `json:"defaultInstallMode,omitempty" yaml:"defaultInstallMode,omitempty"`
+	Description         string             `json:"description,omitempty" yaml:"description,omitempty"`
+	Dependencies        *dependencySpec    `json:"dependencies,omitempty" yaml:"dependencies,omitempty"`
+	Menus               []*menuSpec        `json:"menus,omitempty" yaml:"menus,omitempty"`
+	PublicAssets        []*publicAssetSpec `json:"public_assets,omitempty" yaml:"public_assets,omitempty"`
 }
 
 type dynamicArtifactMetadata = pluginbridge.RuntimeArtifactMetadata
@@ -105,6 +107,12 @@ type frontendAsset struct {
 	Path          string `json:"path" yaml:"path"`
 	ContentBase64 string `json:"contentBase64" yaml:"contentBase64"`
 	ContentType   string `json:"contentType,omitempty" yaml:"contentType,omitempty"`
+}
+
+type publicAssetSpec struct {
+	Source string `json:"source" yaml:"source"`
+	Mount  string `json:"mount,omitempty" yaml:"mount,omitempty"`
+	Index  string `json:"index,omitempty" yaml:"index,omitempty"`
 }
 
 type i18nAsset struct {

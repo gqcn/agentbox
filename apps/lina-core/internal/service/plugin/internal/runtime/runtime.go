@@ -91,8 +91,8 @@ type userImpersonationSetter interface {
 type PermissionMenuFilter interface {
 	// FilterPermissionMenus returns only the menus that pass plugin-level enablement checks.
 	FilterPermissionMenus(ctx context.Context, menus []*entity.SysMenu) []*entity.SysMenu
-	// IsEnabled reports whether a plugin is enabled in the current tenant context.
-	IsEnabled(ctx context.Context, pluginID string) bool
+	// CanExposeBusinessEntries reports whether a plugin can expose business entries in the current tenant context.
+	CanExposeBusinessEntries(ctx context.Context, pluginID string) bool
 }
 
 // CacheChangeNotifier publishes successful dynamic runtime cache mutations to

@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"lina-core/internal/service/plugin/internal/catalog"
@@ -73,6 +74,7 @@ func CreateTestRuntimeStorageArtifactWithFilename(
 			ScopeNature:         catalog.ScopeNatureTenantAware.String(),
 			SupportsMultiTenant: &DefaultTestSupportsMultiTenant,
 			DefaultInstallMode:  catalog.InstallModeTenantScoped.String(),
+			PublicAssets:        runtimePublicAssetsForFrontendAssets(DefaultTestRuntimeFrontendAssets()),
 		},
 		&catalog.ArtifactSpec{
 			RuntimeKind:        pluginbridge.RuntimeKindWasm,
@@ -149,6 +151,7 @@ func CreateTestRuntimeStorageArtifactWithMenus(
 			SupportsMultiTenant: &DefaultTestSupportsMultiTenant,
 			DefaultInstallMode:  catalog.InstallModeTenantScoped.String(),
 			Menus:               menus,
+			PublicAssets:        runtimePublicAssetsForFrontendAssets(DefaultTestRuntimeFrontendAssets()),
 		},
 		&catalog.ArtifactSpec{
 			RuntimeKind:        pluginbridge.RuntimeKindWasm,
@@ -203,6 +206,7 @@ func CreateTestRuntimeStorageArtifactWithFrontendAssetsAndBackendContracts(
 			ScopeNature:         catalog.ScopeNatureTenantAware.String(),
 			SupportsMultiTenant: &DefaultTestSupportsMultiTenant,
 			DefaultInstallMode:  catalog.InstallModeTenantScoped.String(),
+			PublicAssets:        runtimePublicAssetsForFrontendAssets(frontendAssets),
 		},
 		&catalog.ArtifactSpec{
 			RuntimeKind:        pluginbridge.RuntimeKindWasm,
@@ -225,14 +229,37 @@ func CreateTestRuntimeStorageArtifactWithFrontendAssetsAndBackendContracts(
 func DefaultTestRuntimeFrontendAssets() []*catalog.ArtifactFrontendAsset {
 	return []*catalog.ArtifactFrontendAsset{
 		{
-			Path:          "index.html",
+			Path:          "frontend/pages/index.html",
 			ContentBase64: base64.StdEncoding.EncodeToString([]byte("<html><body>dynamic frontend</body></html>")),
 			ContentType:   "text/html; charset=utf-8",
 		},
 		{
-			Path:          "assets/app.js",
+			Path:          "frontend/pages/assets/app.js",
 			ContentBase64: base64.StdEncoding.EncodeToString([]byte("console.log('dynamic frontend');")),
 			ContentType:   "application/javascript",
 		},
+	}
+}
+
+// runtimePublicAssetsForFrontendAssets exposes the default runtime test bundle
+// only when the artifact actually carries matching frontend/pages assets.
+func runtimePublicAssetsForFrontendAssets(frontendAssets []*catalog.ArtifactFrontendAsset) []*catalog.PublicAssetSpec {
+	for _, asset := range frontendAssets {
+		if asset == nil {
+			continue
+		}
+		assetPath := strings.Trim(strings.ReplaceAll(strings.TrimSpace(asset.Path), "\\", "/"), "/")
+		if assetPath == "frontend/pages" || strings.HasPrefix(assetPath, "frontend/pages/") {
+			return defaultTestRuntimePublicAssets()
+		}
+	}
+	return nil
+}
+
+// defaultTestRuntimePublicAssets exposes the default runtime test bundle
+// through the same public_assets declaration required in production packages.
+func defaultTestRuntimePublicAssets() []*catalog.PublicAssetSpec {
+	return []*catalog.PublicAssetSpec{
+		{Source: "frontend/pages", Mount: "/"},
 	}
 }

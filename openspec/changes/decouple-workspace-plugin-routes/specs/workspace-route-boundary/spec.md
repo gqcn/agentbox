@@ -28,7 +28,7 @@
 
 ### Requirement: 宿主保留命名空间和统一插件 API 命名空间必须优先于源码插件公开路由
 
-系统 SHALL 保护宿主已注册控制面 API 路由、统一插件 API 命名空间、插件资产入口和管理工作台入口路径。源码插件通过 GoFrame 注册 HTTP 路由时不得覆盖已注册宿主路由、其他插件已注册路由、动态插件 API 分发、插件资产入口或管理工作台入口；冲突必须在路由注册或启动阶段显式失败。源码插件和动态插件 API 均 SHALL 使用 `/x/{plugin-id}/api/v1/...` 作为公开 API 路径；`/x` 表示统一插件 API 命名空间，不再表示动态插件专属数据面。源码插件 API 不得继续挂载在宿主控制面 `/api/v1` 命名空间下；源码插件不得在 `/x` 下注册非 API 路由。源码插件公开页面、门户、静态资源或自管 fallback MAY 注册 `/`、`/portal/*`、`/assets/*` 或其他非保留 HTTP 路由。`/x-assets` 由宿主保留，用于源码插件和动态插件 `plugin.yaml publicAssets` 声明式 public assets 的统一托管；本变更不得保留 `/plugin-assets` 兼容入口。
+系统 SHALL 保护宿主已注册控制面 API 路由、统一插件 API 命名空间、插件资产入口和管理工作台入口路径。源码插件通过 GoFrame 注册 HTTP 路由时不得覆盖已注册宿主路由、其他插件已注册路由、动态插件 API 分发、插件资产入口或管理工作台入口；冲突必须在路由注册或启动阶段显式失败。源码插件和动态插件 API 均 SHALL 使用 `/x/{plugin-id}/api/v1/...` 作为公开 API 路径；`/x` 表示统一插件 API 命名空间，不再表示动态插件专属数据面。源码插件 API 不得继续挂载在宿主控制面 `/api/v1` 命名空间下；源码插件不得在 `/x` 下注册非 API 路由。源码插件公开页面、门户、静态资源或自管 fallback MAY 注册 `/`、`/portal/*`、`/assets/*` 或其他非保留 HTTP 路由。`/x-assets` 由宿主保留，用于源码插件和动态插件 `plugin.yaml public_assets` 声明式 public assets 的统一托管；本变更不得保留 `/plugin-assets` 兼容入口。
 
 #### Scenario: 保留 API 命名空间优先
 - **WHEN** 源码插件尝试注册与某个已注册 `/api/v1` 宿主控制面 API 具有相同 HTTP 方法和路径的路由

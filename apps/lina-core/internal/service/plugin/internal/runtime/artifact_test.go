@@ -122,6 +122,62 @@ func TestEnsureRuntimeArtifactAvailableRejectsMissingGeneratedWasm(t *testing.T)
 	}
 }
 
+// TestValidateRuntimeArtifactTreatsOmittedPublicAssetIndexAsDefault verifies
+// dynamic plugin.yaml and embedded manifest comparison handles the default
+// public_assets index consistently.
+func TestValidateRuntimeArtifactTreatsOmittedPublicAssetIndexAsDefault(t *testing.T) {
+	services := testutil.NewServices()
+	pluginDir := testutil.CreateTestRuntimePluginDir(
+		t,
+		"plugin-dev-dynamic-public-index-default",
+		"Runtime Public Index Default Plugin",
+		"v0.4.0",
+		nil,
+		nil,
+	)
+
+	artifactPath := filepath.Join(pluginDir, runtime.BuildArtifactRelativePath("plugin-dev-dynamic-public-index-default"))
+	testutil.WriteRuntimeWasmArtifact(
+		t,
+		artifactPath,
+		&catalog.ArtifactManifest{
+			ID:      "plugin-dev-dynamic-public-index-default",
+			Name:    "Runtime Public Index Default Plugin",
+			Version: "v0.4.0",
+			Type:    catalog.TypeDynamic.String(),
+			PublicAssets: []*catalog.PublicAssetSpec{
+				{Source: "frontend/pages", Mount: "/", Index: "index.html"},
+			},
+		},
+		&catalog.ArtifactSpec{
+			RuntimeKind:        pluginbridge.RuntimeKindWasm,
+			ABIVersion:         pluginbridge.SupportedABIVersion,
+			FrontendAssetCount: len(testutil.DefaultTestRuntimeFrontendAssets()),
+		},
+		testutil.DefaultTestRuntimeFrontendAssets(),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	manifest := &catalog.Manifest{
+		ID:      "plugin-dev-dynamic-public-index-default",
+		Name:    "Runtime Public Index Default Plugin",
+		Version: "v0.4.0",
+		Type:    catalog.TypeDynamic.String(),
+		RootDir: pluginDir,
+		PublicAssets: []*catalog.PublicAssetSpec{
+			{Source: "frontend/pages", Mount: "/"},
+		},
+	}
+
+	if err := services.Runtime.ValidateRuntimeArtifact(manifest, pluginDir); err != nil {
+		t.Fatalf("expected omitted index to match explicit default index, got error: %v", err)
+	}
+}
+
 // TestParseRuntimeArtifactLoadsRoutesAndBridgeSpec verifies that artifact
 // parsing restores routes, bridge metadata, and host-service capabilities.
 func TestParseRuntimeArtifactLoadsRoutesAndBridgeSpec(t *testing.T) {
@@ -166,7 +222,7 @@ func TestParseRuntimeArtifactLoadsRoutesAndBridgeSpec(t *testing.T) {
 		nil,
 		[]*pluginbridge.RouteContract{
 			{
-				Path:        "/review-summary",
+				Path:        "/api/v1/review-summary",
 				Method:      "GET",
 				Access:      pluginbridge.AccessLogin,
 				Permission:  "plugin-dev-dynamic-routes:review:view",

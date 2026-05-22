@@ -20,9 +20,22 @@ type testPluginPingReq struct {
 // testPluginPingRes is the response DTO for the strict-route ping handler.
 type testPluginPingRes struct{}
 
+// testPluginIllegalXReq defines one invalid DTO route outside the owned /x namespace.
+type testPluginIllegalXReq struct {
+	g.Meta `path:"/x/other-plugin/health" method:"get"`
+}
+
+// testPluginIllegalXRes is the response DTO for an invalid /x route.
+type testPluginIllegalXRes struct{}
+
 // testPluginPingHandler is the strict-route handler used to verify route capture.
 func testPluginPingHandler(ctx context.Context, req *testPluginPingReq) (*testPluginPingRes, error) {
 	return &testPluginPingRes{}, nil
+}
+
+// testPluginIllegalXHandler is the strict-route handler used to verify /x namespace validation.
+func testPluginIllegalXHandler(ctx context.Context, req *testPluginIllegalXReq) (*testPluginIllegalXRes, error) {
+	return &testPluginIllegalXRes{}, nil
 }
 
 // TestNewRouteRegistrarExposeRootGroupAndPublishedMiddlewares verifies the
@@ -48,9 +61,12 @@ func TestNewRouteRegistrarExposeRootGroupAndPublishedMiddlewares(t *testing.T) {
 	if registrar.Middlewares() == nil {
 		t.Fatalf("expected published middleware directory to be available")
 	}
+	if registrar.APIPrefix() != "/x/plugin-demo" {
+		t.Fatalf("expected plugin API prefix /x/plugin-demo, got %q", registrar.APIPrefix())
+	}
 
 	called := false
-	registrar.Group("/api/v1", func(group RouteGroup) {
+	registrar.Group(registrar.APIPrefix()+"/api/v1", func(group RouteGroup) {
 		called = true
 		if group == nil {
 			t.Fatalf("expected callback group to be initialized")
@@ -78,7 +94,7 @@ func TestRouteRegistrarCaptureSourceRouteBindings(t *testing.T) {
 	})
 
 	registrar := NewRouteRegistrar(rootGroup, "plugin-demo", nil, nil)
-	registrar.Group("/api/v1", func(group RouteGroup) {
+	registrar.Group(registrar.APIPrefix()+"/api/v1", func(group RouteGroup) {
 		group.Group("/plugins", func(group RouteGroup) {
 			group.Bind(testPluginPingHandler)
 			group.GET("/raw", func(r *ghttp.Request) {})
@@ -95,17 +111,162 @@ func TestRouteRegistrarCaptureSourceRouteBindings(t *testing.T) {
 	if bindings[0].Method != "GET" {
 		t.Fatalf("expected GET binding, got %s", bindings[0].Method)
 	}
-	if bindings[0].Path != "/api/v1/plugins/plugins/test-plugin/ping" {
+	if bindings[0].Path != "/x/plugin-demo/api/v1/plugins/plugins/test-plugin/ping" {
 		t.Fatalf("expected strict route path to include nested prefix, got %s", bindings[0].Path)
 	}
 	if !bindings[0].Documentable {
 		t.Fatalf("expected strict DTO handler to be documentable")
 	}
-	if bindings[1].Path != "/api/v1/plugins/raw" {
-		t.Fatalf("expected raw handler path /api/v1/plugins/raw, got %s", bindings[1].Path)
+	if bindings[1].Path != "/x/plugin-demo/api/v1/plugins/raw" {
+		t.Fatalf("expected raw handler path /x/plugin-demo/api/v1/plugins/raw, got %s", bindings[1].Path)
 	}
 	if bindings[1].Documentable {
 		t.Fatalf("expected raw handler to be non-documentable")
+	}
+}
+
+// TestRouteRegistrarRejectsNonAPIRoutesUnderX verifies `/x` remains reserved
+// for plugin API routes owned by the current plugin.
+func TestRouteRegistrarRejectsNonAPIRoutesUnderX(t *testing.T) {
+	server := g.Server("pluginhost-route-x-guard-test")
+
+	var rootGroup *ghttp.RouterGroup
+	server.Group("/", func(group *ghttp.RouterGroup) {
+		rootGroup = group
+	})
+
+	registrar := NewRouteRegistrar(rootGroup, "plugin-demo", nil, nil)
+	registrar.Group(registrar.APIPrefix()+"/api/v1", func(group RouteGroup) {
+		group.GET("/ping", func(request *ghttp.Request) {})
+	})
+
+	tests := []struct {
+		name   string
+		prefix string
+	}{
+		{name: "x root", prefix: "/x"},
+		{name: "other plugin api", prefix: "/x/other-plugin/api/v1"},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			registrar.Group(testCase.prefix, func(group RouteGroup) {
+				group.GET("/ping", func(request *ghttp.Request) {})
+			})
+			if registrar.Err() == nil {
+				t.Fatalf("expected prefix %q to be rejected", testCase.prefix)
+			}
+		})
+	}
+}
+
+// TestRouteRegistrarAllowsPluginOwnedPathsUnderX verifies `/x/{pluginId}` is
+// the only mandatory source-plugin API prefix and plugin-local route content is
+// not forced to use `/api/v1`.
+func TestRouteRegistrarAllowsPluginOwnedPathsUnderX(t *testing.T) {
+	server := g.Server("pluginhost-route-x-owned-path-test")
+
+	var rootGroup *ghttp.RouterGroup
+	server.Group("/", func(group *ghttp.RouterGroup) {
+		rootGroup = group
+	})
+
+	tests := []struct {
+		name         string
+		groupPrefix  string
+		routePattern string
+		expectedPath string
+	}{
+		{
+			name:         "api v2",
+			groupPrefix:  "/x/plugin-demo/api/v2",
+			routePattern: "/items",
+			expectedPath: "/x/plugin-demo/api/v2/items",
+		},
+		{
+			name:         "interface path",
+			groupPrefix:  "/x/plugin-demo/interface/m1",
+			routePattern: "/items",
+			expectedPath: "/x/plugin-demo/interface/m1/items",
+		},
+		{
+			name:         "graphql",
+			groupPrefix:  "/x/plugin-demo",
+			routePattern: "/graphql",
+			expectedPath: "/x/plugin-demo/graphql",
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			registrar := NewRouteRegistrar(rootGroup, "plugin-demo", nil, nil)
+			registrar.Group(testCase.groupPrefix, func(group RouteGroup) {
+				group.GET(testCase.routePattern, func(request *ghttp.Request) {})
+			})
+			if err := registrar.Err(); err != nil {
+				t.Fatalf("expected plugin-owned /x route to be accepted, got error: %v", err)
+			}
+			bindings := registrar.RouteBindings()
+			if len(bindings) != 1 {
+				t.Fatalf("expected 1 route binding, got %d", len(bindings))
+			}
+			if bindings[0].Path != testCase.expectedPath {
+				t.Fatalf("expected route path %s, got %s", testCase.expectedPath, bindings[0].Path)
+			}
+		})
+	}
+}
+
+// TestRouteRegistrarRejectsNestedRoutesOutsideOwnedX verifies nested groups and
+// DTO metadata cannot bypass the reserved /x plugin namespace guard.
+func TestRouteRegistrarRejectsNestedRoutesOutsideOwnedX(t *testing.T) {
+	server := g.Server("pluginhost-route-x-nested-guard-test")
+
+	var rootGroup *ghttp.RouterGroup
+	server.Group("/", func(group *ghttp.RouterGroup) {
+		rootGroup = group
+	})
+
+	tests := []struct {
+		name     string
+		register func(registrar RouteRegistrar)
+	}{
+		{
+			name: "nested group",
+			register: func(registrar RouteRegistrar) {
+				registrar.Group("/x/plugin-demo/api/v1", func(group RouteGroup) {
+					group.Group("/../../x/other-plugin/assets", func(group RouteGroup) {
+						group.GET("/logo", func(request *ghttp.Request) {})
+					})
+				})
+			},
+		},
+		{
+			name: "dto meta path",
+			register: func(registrar RouteRegistrar) {
+				registrar.Group("/", func(group RouteGroup) {
+					group.Bind(testPluginIllegalXHandler)
+				})
+			},
+		},
+		{
+			name: "method path",
+			register: func(registrar RouteRegistrar) {
+				registrar.Group("/", func(group RouteGroup) {
+					group.GET("/x/other-plugin/health", func(request *ghttp.Request) {})
+				})
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			registrar := NewRouteRegistrar(rootGroup, "plugin-demo", nil, nil)
+			testCase.register(registrar)
+			if registrar.Err() == nil {
+				t.Fatalf("expected route registration to be rejected")
+			}
+		})
 	}
 }
 

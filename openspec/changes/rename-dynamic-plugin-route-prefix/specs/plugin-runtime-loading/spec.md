@@ -16,6 +16,26 @@
 - **THEN** 宿主以 `/x/plugin-a/graphql` 分发该请求
 - **AND** 宿主不得要求插件路径包含宿主 API 版本段
 
+### Requirement: 动态插件 DTO 路径不得携带路由分组前缀
+
+系统 SHALL 支持动态插件在后端路由注册声明中维护插件自有路由分组前缀，并在构建期将该分组前缀与 DTO 本地资源路径组合为最终动态路由契约。动态插件 DTO 的 `path` 元数据 SHALL 只声明资源本地路径，不得为了表达插件 API 版本而重复携带 `/api/v1`、`/api/v2` 或其他分组前缀。路由分组前缀 MUST NOT 通过生成的 API 接口文件或 API DTO 文件声明；应由动态插件后端注册入口管理，以保持与源码插件 `Group(prefix).Bind(...)` 一致的职责边界。宿主仍 SHALL 只固定 `/x/{pluginId}` 作为动态插件公开命名空间，插件 API 版本或其他业务分组必须由插件路由分组声明控制。
+
+#### Scenario: 插件在分组前缀中声明 API 版本
+
+- **WHEN** 动态插件 `plugin-a` 在后端 `RegisterRoutes` 注册声明中将 API 包 `dynamic/v1` 绑定到路由分组前缀 `/api/v1`
+- **AND** DTO 声明本地资源路径 `/backend-summary`
+- **THEN** 构建期生成的动态路由契约路径为 `/api/v1/backend-summary`
+- **AND** 宿主公开路径为 `/x/plugin-a/api/v1/backend-summary`
+- **AND** DTO 元数据不得声明 `path="/api/v1/backend-summary"`
+- **AND** 生成的 API 接口文件不得声明 `RouteGroupPrefix`
+
+#### Scenario: 插件切换自有路由分组
+
+- **WHEN** 动态插件 `plugin-a` 将后端注册声明中的路由分组前缀从 `/api/v1` 改为 `/interface/m1`
+- **AND** DTO 仍声明本地资源路径 `/backend-summary`
+- **THEN** 构建期生成的动态路由契约路径为 `/interface/m1/backend-summary`
+- **AND** DTO 不需要为分组前缀变更而修改 `path` 元数据
+
 ### Requirement: 动态插件旧扩展路由不得继续作为分发入口
 
 系统 MUST NOT 继续接受旧 `/api/v1/extensions/{pluginId}/...` 作为动态插件数据面分发入口。OpenAPI 投影、插件资源列表、示例插件前端和新文档 MUST 使用 `/x/{pluginId}/...` 作为公开路径。
@@ -30,6 +50,23 @@
 - **WHEN** 宿主生成动态插件 OpenAPI 文档或插件资源列表
 - **THEN** 动态插件公开路径以 `/x/{pluginId}/...` 开头
 - **AND** 新生成内容不得把 `/api/v1/extensions/{pluginId}/...` 作为动态插件公开路径
+
+### Requirement: 动态插件 OpenAPI 翻译键必须使用公开路由地址
+
+系统 SHALL 使用动态插件公开路由地址与 HTTP 方法生成 apidoc i18n key。动态插件路由 SHALL 使用 `plugins.{pluginId}.paths.{method}.{dottedRoutePath}` 作为 canonical apidoc key base，其中 `{dottedRoutePath}` 只由插件自有路径 segment 转换而来。系统 MUST NOT 为动态插件 API DTO 要求、推荐或消费 `operationId` 作为翻译身份，也 MUST NOT 使用 `RequestType` 作为翻译身份。系统 MUST NOT 为动态插件 OpenAPI operation 输出 `x-i18n-key` 或旧 `x-lina-apidoc-operation-key` 扩展字段。路径转换 MUST 不硬编码识别 `/api/v1`、`/api/v2`、`interface/m1` 或其他插件自有路径语义。系统 MUST NOT 保留旧 `api_v1_*` 路径 slug key 兼容。
+
+#### Scenario: 动态插件使用公开路由地址生成翻译键
+
+- **WHEN** 动态插件 `plugin-a` 的路由 `/api/v1/backend-summary` 通过 `GET` 暴露为 `/x/plugin-a/api/v1/backend-summary`
+- **THEN** 宿主生成的 apidoc key base 为 `plugins.plugin_a.paths.get.api.v1.backend_summary`
+- **AND** 宿主生成的 OpenAPI operation 不因 DTO `operationId` 生成 `plugins.plugin_a.operations.*` key
+- **AND** 宿主生成的 OpenAPI operation 不包含 `x-i18n-key`
+
+#### Scenario: 动态插件自有路径不被特殊解释
+
+- **WHEN** 动态插件 `plugin-a` 的路由 `/interface/m1/backend-summary` 通过 `GET` 暴露为 `/x/plugin-a/interface/m1/backend-summary`
+- **THEN** 宿主生成的 apidoc key base 为 `plugins.plugin_a.paths.get.interface.m1.backend_summary`
+- **AND** 宿主不得生成 `api_v1_backend_summary` 这类硬编码路径 slug
 
 ### Requirement: 动态插件根级路由必须保留宿主 HTTP 治理链路
 

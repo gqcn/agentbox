@@ -1,4 +1,5 @@
 import { test, expect } from '../../fixtures/auth';
+import { workspacePath } from '../../fixtures/config';
 
 test.describe('TC009 过期会话登出保护', () => {
   test('TC009a: 旧 token 访问工作台不会触发 logout 401 风暴', async ({
@@ -34,7 +35,7 @@ test.describe('TC009 过期会话登出保护', () => {
       }
     });
 
-    await page.goto('/dashboard/analytics');
+    await page.goto(workspacePath('/dashboard/analytics'));
     await page.waitForURL(/auth\/login/, { timeout: 15_000 });
     await page.waitForTimeout(1000);
 
@@ -209,7 +210,7 @@ test.describe('TC009 过期会话登出保护', () => {
       }
     });
 
-    await page.goto('/dashboard/analytics');
+    await page.goto(workspacePath('/dashboard/analytics'));
     await expect
       .poll(() => refreshRequestCount, { timeout: 15_000 })
       .toBeGreaterThanOrEqual(1);

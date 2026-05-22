@@ -1,6 +1,6 @@
-// Package frontend manages in-memory frontend asset bundles built from runtime WASM
-// artifacts. The WASM artifact is the single source of truth; bundles are cached in
-// memory and rebuilt on demand after a host restart, eliminating extraction to disk.
+// Package frontend manages plugin public asset resolution and in-memory dynamic
+// frontend bundles. Runtime WASM assets stay cached in memory, but only
+// plugin.yaml public_assets declarations are exposed through /x-assets.
 package frontend
 
 import (
@@ -31,14 +31,14 @@ type Service interface {
 	// dynamic plugins during host startup. A single failed preload does not stop the host;
 	// errors are collected and returned as one joined error.
 	PrewarmRuntimeFrontendBundles(ctx context.Context) error
-	// ResolveRuntimeFrontendAsset resolves one enabled dynamic plugin frontend asset for public serving.
+	// ResolveRuntimeFrontendAsset resolves one declared plugin public asset for public serving.
 	ResolveRuntimeFrontendAsset(
 		ctx context.Context,
 		pluginID string,
 		version string,
 		relativePath string,
 	) (*RuntimeFrontendAssetOutput, error)
-	// BuildRuntimeFrontendPublicBaseURL returns the stable public base URL for runtime plugin assets.
+	// BuildRuntimeFrontendPublicBaseURL returns the stable public base URL for plugin public assets.
 	BuildRuntimeFrontendPublicBaseURL(pluginID string, version string) string
 	// InvalidateBundle removes all cached bundle entries for the given plugin ID.
 	InvalidateBundle(ctx context.Context, pluginID string, reason string)
@@ -55,7 +55,7 @@ var _ Service = (*serviceImpl)(nil)
 
 // serviceImpl implements Service.
 type serviceImpl struct {
-	// catalogSvc provides registry and release lookups for enabled runtime plugins.
+	// catalogSvc provides registry, release, and manifest lookups for plugin public assets.
 	catalogSvc catalog.Service
 }
 

@@ -170,7 +170,7 @@ func TestDynamicPluginInstallAndUninstallManageMenusFromManifest(t *testing.T) {
 			{
 				Key:       menuKey,
 				Name:      "Runtime Menu Metadata Plugin",
-				Path:      "/plugin-assets/plugin-dev-dynamic-menu-metadata/v0.3.0/index.html",
+				Path:      "/x-assets/plugin-dev-dynamic-menu-metadata/v0.3.0/index.html",
 				Perms:     "plugin-dev-dynamic-menu-metadata:view",
 				Icon:      "ant-design:deployment-unit-outlined",
 				Type:      catalog.MenuTypePage.String(),
@@ -258,7 +258,7 @@ func TestSyncPluginMenusAndPermissionsNoopSkipsWritesAndTransactions(t *testing.
 			{
 				Key:       menuKey,
 				Name:      "Menu Noop Startup Plugin",
-				Path:      "/plugin-assets/plugin-menu-noop-startup/v0.1.0/index.html",
+				Path:      "/x-assets/plugin-menu-noop-startup/v0.1.0/index.html",
 				Perms:     "plugin-menu-noop-startup:view",
 				Icon:      "ant-design:deployment-unit-outlined",
 				Type:      catalog.MenuTypePage.String(),
@@ -268,7 +268,7 @@ func TestSyncPluginMenusAndPermissionsNoopSkipsWritesAndTransactions(t *testing.
 		},
 		Routes: []*pluginbridge.RouteContract{
 			{
-				Path:       "/review-summary",
+				Path:       "/api/v1/review-summary",
 				Method:     http.MethodGet,
 				Access:     pluginbridge.AccessLogin,
 				Permission: permission,
@@ -420,7 +420,7 @@ func TestDynamicPluginRoutePermissionMenusAttachToPluginMenu(t *testing.T) {
 		{
 			Key:       menuKey,
 			Name:      "Runtime Route Permission Parent Plugin",
-			Path:      "/plugin-assets/plugin-dev-dynamic-route-permission-parent/v0.3.0/index.html",
+			Path:      "/x-assets/plugin-dev-dynamic-route-permission-parent/v0.3.0/index.html",
 			Perms:     "plugin-dev-dynamic-route-permission-parent:view",
 			Icon:      "ant-design:deployment-unit-outlined",
 			Type:      catalog.MenuTypePage.String(),
@@ -741,7 +741,7 @@ func writeRuntimeArtifactWithRoutePermissions(
 	routes := make([]*pluginbridge.RouteContract, 0, len(permissions))
 	for _, permission := range permissions {
 		routes = append(routes, &pluginbridge.RouteContract{
-			Path:       "/review-summary",
+			Path:       "/api/v1/review-summary",
 			Method:     http.MethodGet,
 			Access:     pluginbridge.AccessLogin,
 			Permission: permission,
@@ -794,7 +794,7 @@ func writeRuntimeArtifactWithMenusAndRoutePermissions(
 	routes := make([]*pluginbridge.RouteContract, 0, len(permissions))
 	for _, permission := range permissions {
 		routes = append(routes, &pluginbridge.RouteContract{
-			Path:       "/review-summary",
+			Path:       "/api/v1/review-summary",
 			Method:     http.MethodGet,
 			Access:     pluginbridge.AccessLogin,
 			Permission: permission,

@@ -49,7 +49,7 @@ func (m *Main) Http(ctx context.Context, in HttpInput) (out *HttpOutput, err err
 		return nil, err
 	}
 	completeSourcePluginHTTPRoutes(startupCtx, ctx, runtime)
-	if err = bindFrontendAssetRoutes(startupCtx, s, runtime.pluginSvc); err != nil {
+	if err = bindFrontendAssetRoutes(startupCtx, s, runtime.pluginSvc, configSvc.GetWorkspaceBasePath(startupCtx)); err != nil {
 		return nil, err
 	}
 

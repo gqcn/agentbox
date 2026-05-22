@@ -63,6 +63,12 @@ func BuildOperationKeyFromPath(path string, method string) string {
 	return buildOpenAPIPathOperationKey(normalizedPath, strings.ToLower(strings.TrimSpace(method)))
 }
 
+// BuildDynamicOperationKey returns the path-derived apidoc operation key base
+// for one dynamic-plugin route.
+func BuildDynamicOperationKey(path string, method string) string {
+	return BuildOperationKeyFromPath(path, method)
+}
+
 // buildOperationKeyFromHandlerType returns the static-route apidoc key base for a handler function type.
 func buildOperationKeyFromHandlerType(handlerType reflect.Type) string {
 	if handlerType == nil || handlerType.Kind() != reflect.Func || handlerType.NumIn() != 2 {
@@ -142,13 +148,19 @@ func buildOpenAPIPathOperationKey(pathName string, method string) string {
 	segments := openAPIPathSegments(pathName)
 	if isDynamicPluginOpenAPIPath(pathName) {
 		pluginID, remainingSegments := dynamicPluginOpenAPIPathParts(segments)
-		remainingPath := strings.Join(remainingSegments, ".")
+		remainingPath := dynamicPluginRouteKeyPath(remainingSegments)
 		if remainingPath == "" {
 			remainingPath = "root"
 		}
 		return "plugins." + pluginID + ".paths." + sanitizeOpenAPIKeyPart(method) + "." + remainingPath
 	}
 	return buildOpenAPIPathKey(pathName) + "." + sanitizeOpenAPIKeyPart(method)
+}
+
+// dynamicPluginRouteKeyPath returns a generic path-derived key fragment without
+// interpreting plugin-owned route segments.
+func dynamicPluginRouteKeyPath(segments []string) string {
+	return strings.Join(segments, ".")
 }
 
 // buildOpenAPIPathKey returns a stable structural key base for a path item.

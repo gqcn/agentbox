@@ -13,6 +13,7 @@ import (
 func TestGuestContractsUseInterfaces(t *testing.T) {
 	assertGuestInterfaceType(t, (*GuestRuntime)(nil), "GuestRuntime")
 	assertGuestInterfaceType(t, (*GuestControllerRouteDispatcher)(nil), "GuestControllerRouteDispatcher")
+	assertGuestInterfaceType(t, (*DynamicRouteRegistrar)(nil), "DynamicRouteRegistrar")
 }
 
 // assertGuestInterfaceType verifies the reflected type under test is an

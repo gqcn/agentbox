@@ -359,6 +359,7 @@ func (s *serviceImpl) buildManifestSnapshotModel(manifest *Manifest) (*ManifestS
 		RouteResponseCodec:        buildDynamicRouteResponseCodec(manifest),
 		RuntimeFrontendAssetCount: buildDynamicFrontendAssetCount(manifest),
 		RuntimeSQLAssetCount:      buildDynamicSQLAssetCount(manifest),
+		PublicAssets:              ClonePublicAssetSpecs(manifest.PublicAssets),
 		RequestedHostServices:     requestedHostServices,
 		HostServiceAuthRequired:   HasResourceScopedHostServices(manifest.HostServices),
 	}

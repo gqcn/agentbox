@@ -235,12 +235,12 @@ describe('generateMenus', () => {
     const linkRoutes = [
       {
         meta: {
-          link: '/plugin-assets/plugin-runtime-demo/v0.1.0/index.html',
+          link: '/x-assets/plugin-runtime-demo/v0.1.0/index.html',
           openInNewWindow: true,
           title: 'Runtime New Window Entry',
         },
         name: 'runtimeNewWindowEntry',
-        path: '/link-102-plugin-assets-plugin-runtime-demo-v0-1-0-index-html',
+        path: '/link-102-x-assets-plugin-runtime-demo-v0-1-0-index-html',
       },
     ] as RouteRecordRaw[];
 
@@ -248,7 +248,7 @@ describe('generateMenus', () => {
       getRoutes: vi.fn(() => [
         {
           name: 'runtimeNewWindowEntry',
-          path: '/link-102-plugin-assets-plugin-runtime-demo-v0-1-0-index-html',
+          path: '/link-102-x-assets-plugin-runtime-demo-v0-1-0-index-html',
         },
       ]),
     };
@@ -267,7 +267,7 @@ describe('generateMenus', () => {
         order: undefined,
         parent: undefined,
         parents: undefined,
-        path: '/link-102-plugin-assets-plugin-runtime-demo-v0-1-0-index-html',
+        path: '/link-102-x-assets-plugin-runtime-demo-v0-1-0-index-html',
         show: true,
       },
     ]);

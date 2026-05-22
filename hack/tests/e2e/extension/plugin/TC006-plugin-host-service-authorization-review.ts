@@ -22,9 +22,9 @@ const networkURLPattern = "https://*.example.com/api";
 const storagePath = "plugin-demo/records";
 const dataTableName = "sys_plugin_node_state";
 const dataTableComment = "Plugin node state table";
-const routeSummaryPath = `/x/${pluginID}/review-summary`;
-const routeHealthPath = `/x/${pluginID}/healthz`;
-const routeAuditPath = `/x/${pluginID}/audit-log`;
+const routeSummaryPath = `/x//api/v1/review-summary`;
+const routeHealthPath = `/x//api/v1/healthz`;
+const routeAuditPath = `/x//api/v1/audit-log`;
 const routePermission = `${pluginID}:review:query`;
 const routeAuditPermission = `${pluginID}:audit:query`;
 
@@ -242,7 +242,7 @@ function writeAuthorizationReviewArtifact() {
           access: "login",
           description: "返回当前插件版本的评审摘要。",
           method: "GET",
-          path: "/review-summary",
+          path: "/api/v1/review-summary",
           permission: routePermission,
           summary: "查询评审摘要",
         },
@@ -250,14 +250,14 @@ function writeAuthorizationReviewArtifact() {
           access: "public",
           description: "返回动态插件公开探活结果。",
           method: "GET",
-          path: "/healthz",
+          path: "/api/v1/healthz",
           summary: "公开健康检查",
         },
         {
           access: "login",
           description: "返回动态插件审计日志回放结果。",
           method: "GET",
-          path: "/audit-log",
+          path: "/api/v1/audit-log",
           permission: routeAuditPermission,
           summary: "审计日志回放",
         },

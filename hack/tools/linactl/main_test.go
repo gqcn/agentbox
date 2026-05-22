@@ -787,9 +787,18 @@ func TestRunDevStartsServicesAsAsyncProcessesAndPrintsFinalStatus(t *testing.T) 
 	var stdout bytes.Buffer
 	application := newApp(&stdout, ioDiscard{}, strings.NewReader(""))
 	application.root = root
-	application.execCommand = func(_ context.Context, name string, args ...string) *exec.Cmd {
+	application.execCommand = func(runCtx context.Context, name string, args ...string) *exec.Cmd {
 		if name == "go" && len(args) >= 1 && args[0] == "build" {
 			return exec.Command("true")
+		}
+		if strings.Contains(name, "vite") {
+			serviceEnv, _ := runCtx.Value(devservice.RunnerContextServiceEnvKey).([]string)
+			if got := toolutil.EnvValue(serviceEnv, "LINAPRO_FRONTEND_DEV_SERVER_URL"); got != "" {
+				t.Fatalf("frontend process must not receive backend proxy env, got %q", got)
+			}
+		} else if serviceEnv, _ := runCtx.Value(devservice.RunnerContextServiceEnvKey).([]string); toolutil.EnvValue(serviceEnv, "LINAPRO_FRONTEND_DEV_SERVER_URL") != "http://127.0.0.1:5666" {
+			got := toolutil.EnvValue(serviceEnv, "LINAPRO_FRONTEND_DEV_SERVER_URL")
+			t.Fatalf("backend process must receive frontend dev server URL, got %q", got)
 		}
 		return exec.Command(os.Args[0], "-test.run=TestHelperLongRunningProcess", "--")
 	}

@@ -37,7 +37,7 @@ function normalizeHostedTarget(value: unknown) {
   if (typeof value !== 'string' || !value) {
     return '';
   }
-  const match = value.match(/\/plugin-assets\/[^?#]+/);
+  const match = value.match(/\/x-assets\/[^?#]+/);
   return match?.[0] ? match[0].replace(/\/+$/, '') : '';
 }
 
@@ -162,7 +162,7 @@ function resolveAccessibleRouteRefreshTarget(
     };
   }
 
-  const pluginId = hostedTarget.match(/\/plugin-assets\/([^/]+)\//)?.[1] ?? '';
+  const pluginId = hostedTarget.match(/\/x-assets\/([^/]+)\//)?.[1] ?? '';
   const pluginState = pluginId ? pluginStateMap?.get(pluginId) : null;
   if (
     pluginState?.installed === 1 &&

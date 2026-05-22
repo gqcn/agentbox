@@ -197,8 +197,11 @@ type DependencyWiringService interface {
 
 // PluginStateService defines plugin enablement lookup operations.
 type PluginStateService interface {
-	// IsEnabled reports whether the plugin with the given ID can expose business entries.
-	IsEnabled(ctx context.Context, pluginID string) bool
+	// CanExposeBusinessEntries reports whether the plugin with the given ID can expose business entries.
+	CanExposeBusinessEntries(ctx context.Context, pluginID string) bool
+	// IsInstalledEnabledForTenant reports whether the plugin is installed, enabled, and
+	// available for the current tenant without applying business-entry upgrade gates.
+	IsInstalledEnabledForTenant(ctx context.Context, pluginID string) bool
 	// SetTenantPluginEnabledState persists one tenant-scoped plugin enablement row.
 	SetTenantPluginEnabledState(ctx context.Context, pluginID string, tenantID int, enabled bool) error
 	// RefreshEnabledSnapshot rebuilds the in-memory business-entry snapshot used by runtime guards.

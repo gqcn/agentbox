@@ -11,7 +11,7 @@ export interface PendingPluginPageRefresh {
 
 type PluginPageGenerationBaseline = PendingPluginPageRefresh;
 
-const pluginAssetRoutePattern = /\/plugin-assets\/([^/]+)\/([^/]+)\//;
+const pluginAssetRoutePattern = /\/x-assets\/([^/]+)\/([^/]+)\//;
 
 let pluginPageGenerationBaseline: null | PluginPageGenerationBaseline = null;
 let pendingPluginPageRefresh: null | PendingPluginPageRefresh = null;

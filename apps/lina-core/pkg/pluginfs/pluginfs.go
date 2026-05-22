@@ -50,11 +50,16 @@ func NormalizeRelativePath(relativePath string) (string, error) {
 	return normalizedPath, nil
 }
 
-// ResolveResourcePath resolves one plugin-relative path to an absolute file inside the plugin root.
+// ResolveResourcePath resolves one plugin-relative path to an existing resource
+// inside the plugin root. Symlink resolution is part of the containment check
+// so plugin-owned resource declarations cannot escape the plugin directory.
 func ResolveResourcePath(rootDir string, relativePath string) (string, error) {
 	normalizedPath, err := NormalizeRelativePath(relativePath)
 	if err != nil {
 		return "", err
+	}
+	if strings.TrimSpace(rootDir) == "" {
+		return "", gerror.New("plugin root directory cannot be empty")
 	}
 
 	fullPath := filepath.Clean(filepath.Join(rootDir, filepath.FromSlash(normalizedPath)))
@@ -65,7 +70,58 @@ func ResolveResourcePath(rootDir string, relativePath string) (string, error) {
 	if !gfile.Exists(fullPath) {
 		return "", gerror.Newf("plugin resource file does not exist: %s", fullPath)
 	}
-	return fullPath, nil
+
+	resolvedRootPath, err := filepath.EvalSymlinks(rootPath)
+	if err != nil {
+		return "", gerror.Wrapf(err, "plugin root directory cannot be resolved: %s", rootPath)
+	}
+	resolvedFullPath, err := filepath.EvalSymlinks(fullPath)
+	if err != nil {
+		return "", gerror.Wrapf(err, "plugin resource path cannot be resolved: %s", relativePath)
+	}
+	resolvedRootPath = filepath.Clean(resolvedRootPath)
+	resolvedFullPath = filepath.Clean(resolvedFullPath)
+	if resolvedFullPath != resolvedRootPath && !strings.HasPrefix(resolvedFullPath, resolvedRootPath+string(filepath.Separator)) {
+		return "", gerror.Newf("plugin resource path escapes the plugin root: %s", relativePath)
+	}
+	return resolvedFullPath, nil
+}
+
+// ValidateNoSymlinkPathFromFS verifies that every segment in one embedded-FS
+// resource path is a direct filesystem entry rather than a symbolic link.
+// This keeps generic fs.FS implementations such as os.DirFS from escaping the
+// plugin-owned resource set while leaving true embed.FS resources unaffected.
+func ValidateNoSymlinkPathFromFS(fileSystem fs.FS, relativePath string) error {
+	if fileSystem == nil {
+		return gerror.New("plugin embedded filesystem cannot be nil")
+	}
+	normalizedPath, err := NormalizeRelativePath(relativePath)
+	if err != nil {
+		return err
+	}
+
+	currentDir := "."
+	for _, segment := range strings.Split(normalizedPath, "/") {
+		entries, err := fs.ReadDir(fileSystem, currentDir)
+		if err != nil {
+			return gerror.Wrapf(err, "plugin resource parent cannot be read: %s", currentDir)
+		}
+		var matchedEntry fs.DirEntry
+		for _, entry := range entries {
+			if entry != nil && entry.Name() == segment {
+				matchedEntry = entry
+				break
+			}
+		}
+		if matchedEntry == nil {
+			return gerror.Newf("plugin resource file does not exist: %s", relativePath)
+		}
+		if matchedEntry.Type()&fs.ModeSymlink != 0 {
+			return gerror.Newf("plugin resource path uses symbolic link: %s", relativePath)
+		}
+		currentDir = path.Join(currentDir, segment)
+	}
+	return nil
 }
 
 // DiscoverSQLPaths discovers plugin SQL files by directory convention.

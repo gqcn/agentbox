@@ -2,6 +2,7 @@ import type { Page } from "@playwright/test";
 
 import { expect } from "@playwright/test";
 
+import { workspacePath } from "../fixtures/config";
 import { waitForRouteReady } from "../support/ui";
 
 export class LoginPage {
@@ -129,7 +130,7 @@ export class LoginPage {
   }
 
   async goto() {
-    await this.gotoPath("/auth/login");
+    await this.gotoPath(workspacePath("/auth/login"));
   }
 
   async gotoPath(path: string) {

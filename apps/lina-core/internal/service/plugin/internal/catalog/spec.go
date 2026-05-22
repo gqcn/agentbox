@@ -327,6 +327,22 @@ func CloneHookSpecs(items []*HookSpec) []*HookSpec {
 	return cloned
 }
 
+// ClonePublicAssetSpecs returns a deep copy of public asset declarations.
+func ClonePublicAssetSpecs(items []*PublicAssetSpec) []*PublicAssetSpec {
+	if len(items) == 0 {
+		return []*PublicAssetSpec{}
+	}
+	cloned := make([]*PublicAssetSpec, 0, len(items))
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		next := *item
+		cloned = append(cloned, &next)
+	}
+	return cloned
+}
+
 // CloneResourceSpecsToMap returns a deep copy of the resource spec slice keyed by resource Key.
 func CloneResourceSpecsToMap(items []*ResourceSpec) map[string]*ResourceSpec {
 	if len(items) == 0 {

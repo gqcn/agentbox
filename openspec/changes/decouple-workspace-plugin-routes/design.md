@@ -4,7 +4,7 @@
 
 源码插件已经具备代码级 HTTP 路由注册能力，也已经通过 `plugin.yaml` 的 `menus` 声明工作台菜单与权限。问题不在于缺少“门户”功能，而在于默认管理工作台与根路径、静态资源 fallback、工作台路由 base 强绑定，导致源码插件无法闭环维护自己的公开 HTTP 页面、静态资源或 SPA fallback。
 
-本设计把默认管理工作台视为内建工作台应用，给它一个可配置入口路径；源码插件 HTTP 路由仍然是插件内部实现细节，主框架不感知这些路由属于公开页面、静态资源还是工作台 API。工作台可见性和权限仍只由 `plugin.yaml` 菜单治理。对于无需插件自行编写静态路由的公开文件，源码插件和动态插件可以通过 `plugin.yaml` 中的 `publicAssets` 声明交由宿主统一托管到 `/x-assets/{plugin-id}/{version}/...`，但该声明只表达可公开静态资源目录和其在插件资产命名空间内的挂载点，不表达 HTTP 路由、门户路由或工作台页面语义。本变更不考虑兼容旧 `/plugin-assets` 入口。
+本设计把默认管理工作台视为内建工作台应用，给它一个可配置入口路径；源码插件 HTTP 路由仍然是插件内部实现细节，主框架不感知这些路由属于公开页面、静态资源还是工作台 API。工作台可见性和权限仍只由 `plugin.yaml` 菜单治理。对于无需插件自行编写静态路由的公开文件，源码插件和动态插件可以通过 `plugin.yaml` 中的 `public_assets` 声明交由宿主统一托管到 `/x-assets/{plugin-id}/{version}/...`，但该声明只表达可公开静态资源目录和其在插件资产命名空间内的挂载点，不表达 HTTP 路由、门户路由或工作台页面语义。本变更不考虑兼容旧 `/plugin-assets` 入口。
 
 ## Goals / Non-Goals
 
@@ -13,7 +13,7 @@
 - 让默认管理工作台通过可配置的非根 `basePath` 访问，默认值确定为 `/admin`，不再默认独占 `/`；`basePath` 以启动期配置为权威，不作为运行期热修改配置。
 - 让源码插件可以通过现有 GoFrame 路由注册机制闭环注册 `/`、`/portal/*`、`/assets/*` 或其他非保留路径。
 - 保持插件 HTTP 路由以代码注册为唯一事实来源；不在 `plugin.yaml` 中声明公开路由、门户路由、工作台 API 路由或路由分组语义。
-- 支持源码插件和动态插件声明可由宿主统一托管的公开静态资源目录，并继续保持 SQL、manifest、i18n、apidoc、后端源码和其他治理资源默认不可公开。
+- 支持源码插件和动态插件声明可由宿主统一托管的公开静态资源目录，宿主只保证声明路径不能逃逸插件自身资源边界，是否公开插件内某个目录由 `public_assets` 声明负责。
 - 保持 `plugin.yaml` 的 `menus` 作为工作台菜单、权限和动态路由治理的事实来源。
 - 利用 GoFrame 路由注册冲突作为源码插件 HTTP 路由冲突检测机制；宿主不维护单独的源码插件 HTTP 路由清单。
 - 将源码插件和动态插件 API 统一到 `/x/{plugin-id}/api/v1` 插件 API 命名空间，让用户、前端 helper、网关、审计、OpenAPI 和测试使用同一插件 API base 规则；`/x/**` 只承载插件 API，不承载插件公开页面、门户、静态资源或自管 fallback。
@@ -80,9 +80,9 @@
 
 10. `/x-assets` 支持声明式 public asset 托管。
 
-   动态插件现有 `/plugin-assets/{plugin-id}/{version}/...` frontend assets 访问路径迁移到统一的声明式 public asset 模型 `/x-assets/{plugin-id}/{version}/...`，不再把运行时 artifact 中的 frontend assets 视为天然公开，也不保留旧入口兼容。源码插件和动态插件都必须在 `plugin.yaml` 根字段 `publicAssets` 中声明可公开目录及挂载点，宿主采用严格 schema 校验并只暴露白名单资源。声明项使用 `source` 指向插件内相对目录或动态 artifact asset 前缀，使用可选 `mount` 指定其在 `/x-assets/{plugin-id}/{version}/` 下的相对挂载路径；`mount` 为空或 `/` 时，声明目录内文件直接挂载到版本根。示例：`source: frontend/public`、`mount: /` 时，`frontend/public/logo.png` 映射为 `/x-assets/{plugin-id}/{version}/logo.png`。源码插件从 `plugin.Assets().UseEmbeddedFiles(...)` 注册的 embedded FS 中读取声明目录；动态插件从运行时 artifact 中匹配 `source` 前缀的 frontend asset 集合读取。声明必须拒绝空 `source`、绝对路径、包含 `../` 的路径、治理目录、重复或互相覆盖的 `mount`、不存在的 `source` 以及无法安全规范化的路径；Content-Type 按扩展名或等价 MIME 推断能力确定。SQL、`plugin.yaml`、`manifest/i18n`、apidoc、后端源码和生命周期治理资源不得因声明式托管而可访问。
+   动态插件现有 `/plugin-assets/{plugin-id}/{version}/...` frontend assets 访问路径迁移到统一的声明式 public asset 模型 `/x-assets/{plugin-id}/{version}/...`，不再把运行时 artifact 中的 frontend assets 视为天然公开，也不保留旧入口兼容。源码插件和动态插件都必须在 `plugin.yaml` 根字段 `public_assets` 中声明可公开目录及挂载点，宿主采用严格路径 schema 校验并只暴露声明匹配的资源。声明项使用 `source` 指向插件内相对目录或动态 artifact asset 前缀，使用可选 `mount` 指定其在 `/x-assets/{plugin-id}/{version}/` 下的相对挂载路径；`mount` 为空或 `/` 时，声明目录内文件直接挂载到版本根。声明项还可以使用可选 `index` 指定访问该挂载目录本身时返回的默认文件，未配置时默认 `index.html`；`index` 必须是安全的相对文件名，不得是目录、绝对路径、URL、通配符或包含 `../` 的路径。示例：`source: frontend/public`、`mount: /` 时，`frontend/public/logo.png` 映射为 `/x-assets/{plugin-id}/{version}/logo.png`；`index: index.htm` 时，访问版本根或对应挂载目录会解析为声明 source 下的 `index.htm`。源码插件从 `plugin.Assets().UseEmbeddedFiles(...)` 注册的 embedded FS 或插件根目录中读取声明目录；动态插件从运行时 artifact 中匹配 `source` 前缀的 frontend asset 集合读取。声明必须拒绝空 `source`、绝对路径、包含 `../` 的路径、重复或互相覆盖的 `mount`、不存在的 `source`、符号链接逃逸插件资源边界以及无法安全规范化的路径；Content-Type 按扩展名或等价 MIME 推断能力确定。宿主不根据 `backend`、`manifest`、`plugin.yaml` 等目录或文件名维护 public asset 黑名单，也不把声明限制到 `frontend/public` 白名单；插件作者配置的插件内目录即为发布授权边界。
 
-   public asset URL 以插件 ID 和版本为缓存边界，同一 `{plugin-id, version}` 下资源内容必须稳定。源码插件或动态插件变更 public asset 内容时必须升级 `plugin.yaml` 版本，或在设计中引入等价内容版本机制。`publicAssets` 默认匿名可读，但必须满足插件已安装、已启用和当前租户可用；请求缺少租户上下文且无法判定租户时，按全局启用状态判断，插件未安装、未启用或当前租户不可用时返回 404。租户专属、用户专属或需要鉴权的文件不应放入 `publicAssets`，应由插件自管 HTTP 路由并自行挂载鉴权与租户中间件。
+   public asset URL 以插件 ID 和版本为缓存边界，同一 `{plugin-id, version}` 下资源内容必须稳定。源码插件或动态插件变更 public asset 内容时必须升级 `plugin.yaml` 版本，或在设计中引入等价内容版本机制。`public_assets` 默认匿名可读，但必须满足插件已安装、已启用和当前租户可用；请求缺少租户上下文且无法判定租户时，按全局启用状态判断，插件未安装、未启用或当前租户不可用时返回 404。租户专属、用户专属或需要鉴权的文件不应放入 `public_assets`，应由插件自管 HTTP 路由并自行挂载鉴权与租户中间件。
 
 11. 动态插件工作台页面继续由 `system/plugin/dynamic-page` 承载。
 
@@ -90,7 +90,7 @@
 
 12. 插件 API 的 OpenAPI 投影只覆盖 API 路由。
 
-   源码插件通过 `APIPrefix()` 注册、且符合 GoFrame DTO 文档形态的插件 API 可以投影为 OpenAPI；动态插件 route contract 继续按 `/x/{plugin-id}/api/v1/...` 公开路径投影。源码插件公开页面、门户、静态资源、自管 fallback 以及 `publicAssets` 文件访问不得自动进入 OpenAPI，也不得因为可通过 HTTP 访问而生成权限节点或资源引用。
+   源码插件通过 `APIPrefix()` 注册、且符合 GoFrame DTO 文档形态的插件 API 可以投影为 OpenAPI；动态插件 route contract 继续按 `/x/{plugin-id}/api/v1/...` 公开路径投影。源码插件公开页面、门户、静态资源、自管 fallback 以及 `public_assets` 文件访问不得自动进入 OpenAPI，也不得因为可通过 HTTP 访问而生成权限节点或资源引用。
 
 ## Risks / Trade-offs
 
@@ -112,17 +112,17 @@
 - [Risk] 源码插件 HTTP 路由被误认为不需要鉴权。
   Mitigation：文档明确 HTTP 路由是插件实现细节；插件公开路由、工作台 API 路由和静态资源路由的鉴权策略由插件代码通过中间件自行决定。工作台菜单权限不自动保护任意 HTTP 路由。
 
-- [Risk] 插件 public asset 声明误暴露 SQL、manifest、i18n 或后端源码。
-  Mitigation：public asset 托管只允许宿主校验通过的白名单目录与文件类型；禁止声明 `manifest`、`manifest/sql`、`backend`、`plugin.yaml`、`../` 路径或任何治理资源目录。动态插件 artifact 中 SQL 继续保留在独立 SQL section，不得被 `/x-assets` resolver 读取。
+- [Risk] 插件 public asset 声明误暴露插件内敏感文件。
+  Mitigation：`public_assets` 被视为插件作者的显式发布授权，宿主不按目录名判断敏感性；插件审查应关注声明目录是否适合匿名公开。宿主强制校验 `source`、`mount`、`index` 不能使用 URL、绝对路径、`../`、通配符或符号链接逃逸插件资源边界；动态插件 artifact 中 SQL、生命周期、host-service、路由契约、i18n 和 apidoc 仍保留在独立 section，不会被 `/x-assets` resolver 读取。
 
 - [Risk] `/x-assets/{plugin-id}/{version}/...` 版本 URL 下资源内容变化导致浏览器或 CDN 缓存陈旧。
-  Mitigation：要求同一插件版本下 public asset 内容不可变；资源变化必须 bump 插件版本或采用明确内容版本机制。实现与审查中需要覆盖源码插件和动态插件的版本边界，并将动态插件既有 frontend assets 路径迁移到 `plugin.yaml publicAssets` 声明。
+  Mitigation：要求同一插件版本下 public asset 内容不可变；资源变化必须 bump 插件版本或采用明确内容版本机制。实现与审查中需要覆盖源码插件和动态插件的版本边界，并将动态插件既有 frontend assets 路径迁移到 `plugin.yaml public_assets` 声明。
 
 - [Risk] public assets 被误用于租户专属或鉴权资源。
-  Mitigation：`publicAssets` 默认匿名可读但受插件启用和租户可用性治理约束；租户专属、用户专属或需要鉴权的资源必须由插件自管 HTTP 路由并挂载鉴权/租户中间件。测试需要覆盖无租户上下文、插件禁用和租户不可用时的 404 行为。
+  Mitigation：`public_assets` 默认匿名可读但受插件启用和租户可用性治理约束；租户专属、用户专属或需要鉴权的资源必须由插件自管 HTTP 路由并挂载鉴权/租户中间件。测试需要覆盖无租户上下文、插件禁用和租户不可用时的 404 行为。
 
 - [Risk] i18n 或缓存治理被误触发为全量改造。
-  Mitigation：本变更只调整工作台入口配置、路由 fallback 和 public asset 托管契约，不新增运行时业务缓存；若新增配置界面文案则同步 i18n，否则在任务记录中明确无运行时文案影响。public asset 托管不改变运行时 i18n 资源加载边界，manifest/i18n 不得作为静态资源公开。
+  Mitigation：本变更只调整工作台入口配置、路由 fallback 和 public asset 托管契约，不新增运行时业务缓存；若新增配置界面文案则同步 i18n，否则在任务记录中明确无运行时文案影响。public asset 托管不改变运行时 i18n 资源加载边界；只有插件显式把插件内 i18n 目录声明为 `public_assets` 时，宿主才会按普通静态资源发布该声明目录。
 
 ## Implementation Plan
 
@@ -131,7 +131,7 @@
 3. 调整前端 router base、登录跳转、刷新路径、public frontend 配置消费和开发代理；开发模式以后端公开地址作为统一入口，后端在工作台 basePath 下代理 Vite。
 4. 保持源码插件 HTTP registrar 的代码注册模型，不新增 manifest 路由声明；新增 `APIPrefix()` 或等价方法，补充测试证明源码插件可注册根路径、插件 API 必须使用 `/x/{plugin-id}/api/v1`，且主框架不感知源码插件非 API 路由分组。
 5. 调整 `/x` 动态插件分发边界、动态插件示例和 route contract 测试，使动态插件 API 公开路径使用 `/x/{plugin-id}/api/v1/...`，且不吞掉源码插件同一统一插件 API 命名空间下的具体路由。
-6. 增加插件 `plugin.yaml publicAssets` 声明契约和 resolver 边界，验证源码插件 embedded FS 与动态插件 artifact 仅暴露声明的 public assets，且 SQL、manifest、i18n、apidoc 和后端资源不可访问；同步迁移动态插件既有 frontend assets 访问路径到该声明式模型，并保持 `system/plugin/dynamic-page` 工作台承载模型。
+6. 增加插件 `plugin.yaml public_assets` 声明契约和 resolver 边界，验证源码插件 embedded FS 与动态插件 artifact 仅暴露声明的 public assets，且声明路径不能通过 `../`、绝对路径、URL 或符号链接逃逸插件自身资源边界；同步迁移动态插件既有 frontend assets 访问路径到该声明式模型，并保持 `system/plugin/dynamic-page` 工作台承载模型。
 7. 更新 E2E 与开发文档中的默认管理台访问路径、源码/动态插件 API base 和插件 public asset 托管说明。
 8. 运行 Go 路由绑定测试、前端单元测试、相关 E2E、`openspec validate`。
 

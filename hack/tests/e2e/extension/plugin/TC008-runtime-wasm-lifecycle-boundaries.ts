@@ -27,7 +27,7 @@ const dataTableName = "sys_plugin_node_state";
 const pageMenuKey = `plugin:${primaryPluginID}:page-entry`;
 const buttonMenuKey = `plugin:${primaryPluginID}:inspect`;
 const assetPathForVersion = (version: string) =>
-  `/plugin-assets/${primaryPluginID}/${version}/index.html`;
+  `/x-assets/${primaryPluginID}/${version}/index.html`;
 
 type HostServiceSpec = {
   methods: string[];
@@ -186,7 +186,7 @@ function buildRuntimeArtifact(options: {
   const frontendAssets = includePageAsset
     ? [
         {
-          path: "index.html",
+          path: "frontend/pages/index.html",
           contentBase64: Buffer.from(
             `<html><body><h1>${options.id}-${options.version}</h1></body></html>`,
           ).toString("base64"),
@@ -232,6 +232,10 @@ function buildRuntimeArtifact(options: {
         scopeNature: "tenant_aware",
         supportsMultiTenant: false,
         defaultInstallMode: "global",
+        public_assets:
+          frontendAssets.length > 0
+            ? [{ source: "frontend/pages", mount: "/" }]
+            : undefined,
         version: options.version,
       }),
     ),

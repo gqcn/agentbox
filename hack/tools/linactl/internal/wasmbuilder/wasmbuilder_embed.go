@@ -212,13 +212,12 @@ func collectFrontendAssets(pluginDir string, embeddedResources *embeddedStaticRe
 			if !ok {
 				return nil, fmt.Errorf("embedded frontend asset not found: %s", filePath)
 			}
-			relativePath := strings.TrimPrefix(filePath, "frontend/pages/")
 			contentType := mime.TypeByExtension(filepath.Ext(filePath))
 			if contentType == "" {
 				contentType = "application/octet-stream"
 			}
 			assets = append(assets, &frontendAsset{
-				Path:          relativePath,
+				Path:          filePath,
 				ContentBase64: base64.StdEncoding.EncodeToString(content),
 				ContentType:   contentType,
 			})
@@ -255,7 +254,7 @@ func collectFrontendAssets(pluginDir string, embeddedResources *embeddedStaticRe
 	sort.Strings(paths)
 	assets := make([]*frontendAsset, 0, len(paths))
 	for _, filePath := range paths {
-		relativePath, err := filepath.Rel(frontendDir, filePath)
+		relativePath, err := filepath.Rel(pluginDir, filePath)
 		if err != nil {
 			return nil, err
 		}

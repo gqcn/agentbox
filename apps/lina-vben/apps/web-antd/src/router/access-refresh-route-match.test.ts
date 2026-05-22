@@ -30,11 +30,11 @@ describe('access refresh route matching', () => {
 
   it('keeps a regenerated plugin iframe route when the name changed but the path is still accessible', () => {
     const pluginRoutePath =
-      '/link-100-plugin-assets-plugin-dev-dynamic-hot-upgrade-v0-2-0-index-html';
+      '/link-100-x-assets-plugin-dev-dynamic-hot-upgrade-v0-2-0-index-html';
     const routes: RouteRecordRaw[] = [
       {
         component: routeComponent,
-        name: 'Link100PluginAssetsPluginDevDynamicHotUpgradeV020IndexHtml',
+        name: 'Link100XAssetsPluginDevDynamicHotUpgradeV020IndexHtml',
         path: pluginRoutePath,
       },
     ];
@@ -44,7 +44,7 @@ describe('access refresh route matching', () => {
         matched: [
           { name: 'Root', path: '/' },
           {
-            name: 'Link99PluginAssetsPluginDevDynamicHotUpgradeV020IndexHtml',
+            name: 'Link99XAssetsPluginDevDynamicHotUpgradeV020IndexHtml',
             path: pluginRoutePath,
           },
         ],
@@ -82,11 +82,11 @@ describe('access refresh route matching', () => {
 
   it('returns an equivalent iframe route when a plugin menu route was rebuilt with a new internal path', () => {
     const oldRoutePath =
-      '/link-100-plugin-assets-plugin-dev-dynamic-hot-upgrade-v0-2-0-index-html';
+      '/link-100-x-assets-plugin-dev-dynamic-hot-upgrade-v0-2-0-index-html';
     const newRoutePath =
-      '/link-101-plugin-assets-plugin-dev-dynamic-hot-upgrade-v0-2-0-index-html';
+      '/link-101-x-assets-plugin-dev-dynamic-hot-upgrade-v0-2-0-index-html';
     const iframeSrc =
-      '/plugin-assets/plugin-dev-dynamic-hot-upgrade/v0.2.0/index.html';
+      '/x-assets/plugin-dev-dynamic-hot-upgrade/v0.2.0/index.html';
     const routes: RouteRecordRaw[] = [
       {
         component: routeComponent,
@@ -94,7 +94,7 @@ describe('access refresh route matching', () => {
           iframeSrc,
           title: 'Dynamic Hot Upgrade Plugin',
         },
-        name: 'Link101PluginAssetsPluginDevDynamicHotUpgradeV020IndexHtml',
+        name: 'Link101XAssetsPluginDevDynamicHotUpgradeV020IndexHtml',
         path: newRoutePath,
       },
     ];
@@ -117,7 +117,7 @@ describe('access refresh route matching', () => {
                 iframeSrc,
                 title: 'Dynamic Hot Upgrade Plugin',
               },
-              name: 'Link100PluginAssetsPluginDevDynamicHotUpgradeV020IndexHtml',
+              name: 'Link100XAssetsPluginDevDynamicHotUpgradeV020IndexHtml',
               path: oldRoutePath,
             },
           ],
@@ -156,7 +156,7 @@ describe('access refresh route matching', () => {
 
   it('keeps the current plugin iframe route during a failed upgrade while the plugin remains installed and enabled', () => {
     const iframeSrc =
-      '/plugin-assets/plugin-dev-dynamic-hot-upgrade/v0.2.0/index.html';
+      '/x-assets/plugin-dev-dynamic-hot-upgrade/v0.2.0/index.html';
     const routes: RouteRecordRaw[] = [
       {
         component: routeComponent,
@@ -187,7 +187,7 @@ describe('access refresh route matching', () => {
             { name: 'Root', path: '/' },
             { name: 'FallbackNotFound', path: '/:path(.*)*' },
           ],
-          path: '/link-102-plugin-assets-plugin-dev-dynamic-hot-upgrade-v0-2-0-index-html',
+          path: '/link-102-x-assets-plugin-dev-dynamic-hot-upgrade-v0-2-0-index-html',
         },
         {
           matched: [
@@ -197,15 +197,15 @@ describe('access refresh route matching', () => {
                 iframeSrc,
                 title: 'Dynamic Hot Upgrade Plugin',
               },
-              name: 'Link102PluginAssetsPluginDevDynamicHotUpgradeV020IndexHtml',
-              path: '/link-102-plugin-assets-plugin-dev-dynamic-hot-upgrade-v0-2-0-index-html',
+              name: 'Link102XAssetsPluginDevDynamicHotUpgradeV020IndexHtml',
+              path: '/link-102-x-assets-plugin-dev-dynamic-hot-upgrade-v0-2-0-index-html',
             },
           ],
           meta: {
             iframeSrc,
             title: 'Dynamic Hot Upgrade Plugin',
           },
-          path: '/link-102-plugin-assets-plugin-dev-dynamic-hot-upgrade-v0-2-0-index-html',
+          path: '/link-102-x-assets-plugin-dev-dynamic-hot-upgrade-v0-2-0-index-html',
         },
         pluginStateMap,
       ).accessible,
@@ -214,7 +214,7 @@ describe('access refresh route matching', () => {
 
   it('does not keep an installed normal plugin iframe when no accessible route remains', () => {
     const iframeSrc =
-      '/plugin-assets/plugin-dev-dynamic-hot-upgrade/v0.2.0/index.html';
+      '/x-assets/plugin-dev-dynamic-hot-upgrade/v0.2.0/index.html';
     const pluginStateMap = new Map([
       [
         'plugin-dev-dynamic-hot-upgrade',
@@ -238,7 +238,7 @@ describe('access refresh route matching', () => {
             { name: 'Root', path: '/' },
             { name: 'FallbackNotFound', path: '/:path(.*)*' },
           ],
-          path: '/link-102-plugin-assets-plugin-dev-dynamic-hot-upgrade-v0-2-0-index-html',
+          path: '/link-102-x-assets-plugin-dev-dynamic-hot-upgrade-v0-2-0-index-html',
         },
         {
           matched: [
@@ -248,15 +248,15 @@ describe('access refresh route matching', () => {
                 iframeSrc,
                 title: 'Dynamic Hot Upgrade Plugin',
               },
-              name: 'Link102PluginAssetsPluginDevDynamicHotUpgradeV020IndexHtml',
-              path: '/link-102-plugin-assets-plugin-dev-dynamic-hot-upgrade-v0-2-0-index-html',
+              name: 'Link102XAssetsPluginDevDynamicHotUpgradeV020IndexHtml',
+              path: '/link-102-x-assets-plugin-dev-dynamic-hot-upgrade-v0-2-0-index-html',
             },
           ],
           meta: {
             iframeSrc,
             title: 'Dynamic Hot Upgrade Plugin',
           },
-          path: '/link-102-plugin-assets-plugin-dev-dynamic-hot-upgrade-v0-2-0-index-html',
+          path: '/link-102-x-assets-plugin-dev-dynamic-hot-upgrade-v0-2-0-index-html',
         },
         pluginStateMap,
       ).accessible,

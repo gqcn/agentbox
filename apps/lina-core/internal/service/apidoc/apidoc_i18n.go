@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/gogf/gf/v2/net/goai"
+
+	"lina-core/pkg/pluginhost"
 )
 
 // localizeDocument applies request-locale translations to all user-visible
@@ -159,10 +161,13 @@ func matchesOpenAPIStandardResponseField(key string, field string) bool {
 }
 
 // operationBaseKey returns the best stable key base for one operation. Static
-// routes prefer their request DTO schema; dynamic routes fall back to path or
-// operation-id derived keys.
+// routes prefer their request DTO schema; dynamic routes use public path and
+// method because route method + path is already the unique dynamic identity.
 func (l *openAPILocalizer) operationBaseKey(pathName string, method string, operation *goai.Operation) string {
 	if operation == nil {
+		return buildOpenAPIPathOperationKey(pathName, method)
+	}
+	if isDynamicPluginOpenAPIPath(pathName) {
 		return buildOpenAPIPathOperationKey(pathName, method)
 	}
 	if key := l.requestBodyComponentKey(operation.RequestBody); key != "" {
@@ -170,9 +175,6 @@ func (l *openAPILocalizer) operationBaseKey(pathName string, method string, oper
 	}
 	if key := l.requestKeyByDesc[operation.Description]; key != "" {
 		return key
-	}
-	if isDynamicPluginOpenAPIPath(pathName) {
-		return buildOpenAPIPathOperationKey(pathName, method)
 	}
 	if strings.TrimSpace(operation.OperationID) != "" {
 		return "core.operations." + sanitizeOpenAPIKeyPart(operation.OperationID)
@@ -695,13 +697,19 @@ func buildOpenAPIPathOperationKey(pathName string, method string) string {
 	segments := openAPIPathSegments(pathName)
 	if isDynamicPluginOpenAPIPath(pathName) {
 		pluginID, remainingSegments := dynamicPluginOpenAPIPathParts(segments)
-		remainingPath := strings.Join(remainingSegments, ".")
+		remainingPath := dynamicPluginRouteKeyPath(remainingSegments)
 		if remainingPath == "" {
 			remainingPath = "root"
 		}
 		return "plugins." + pluginID + ".paths." + sanitizeOpenAPIKeyPart(method) + "." + remainingPath
 	}
 	return buildOpenAPIPathKey(pathName) + "." + sanitizeOpenAPIKeyPart(method)
+}
+
+// dynamicPluginRouteKeyPath returns a generic path-derived key fragment without
+// interpreting plugin-owned route segments.
+func dynamicPluginRouteKeyPath(segments []string) string {
+	return strings.Join(segments, ".")
 }
 
 // isDynamicPluginOpenAPIPath reports whether a public OpenAPI path belongs to
@@ -724,7 +732,7 @@ func dynamicPluginOpenAPIPathParts(segments []string) (string, []string) {
 
 // dynamicPluginOpenAPIPath detects `/x/{pluginId}/...` paths after OpenAPI key sanitization.
 func dynamicPluginOpenAPIPath(segments []string) (pluginIndex int, routeStart int, ok bool) {
-	if len(segments) >= 2 && segments[0] == "x" {
+	if len(segments) >= 2 && segments[0] == pluginhost.PluginAPINamespaceSegment {
 		return 1, 2, true
 	}
 	return 0, 0, false
