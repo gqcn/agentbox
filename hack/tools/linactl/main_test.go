@@ -862,6 +862,151 @@ func TestRunDevRejectsOccupiedPort(t *testing.T) {
 	}
 }
 
+// TestRunDevWaitsForManagedServicePortsToRelease verifies that runDev allows
+// a short release window after stopping PID-file-backed services before it
+// rejects occupied development ports.
+func TestRunDevWaitsForManagedServicePortsToRelease(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "go.work"), "go 1.25.0\n")
+	writeFile(t, filepath.Join(root, "apps", "lina-core", "manifest", "config", "config.template.yaml"), "template: true\n")
+	writeFile(t, filepath.Join(root, "apps", "lina-core", "manifest", "config", "config.yaml"), "server:\n  address: \":9120\"\n")
+	writeFile(t, filepath.Join(root, "apps", "lina-vben", "apps", "web-antd", "vite.config.mts"), "proxy: { '/api': { target: 'http://localhost:9120' } }\n")
+	writeFile(t, filepath.Join(root, "apps", "lina-core", "manifest", "config", "metadata.yaml"), "metadata: true\n")
+	writeFile(t, filepath.Join(root, "apps", "lina-core", "manifest", "sql", "001.sql"), "select 1;\n")
+	writeFile(t, filepath.Join(root, "apps", "lina-core", "manifest", "i18n", "en-US", "framework.json"), "{}\n")
+	if err := os.MkdirAll(filepath.Join(root, "apps", "lina-vben", "apps", "web-antd"), 0o755); err != nil {
+		t.Fatalf("mkdir frontend workdir: %v", err)
+	}
+	writeFrontendDependencySentinel(t, root)
+
+	services := devservice.Services(root, defaultBackendPort, defaultFrontendPort)
+	for _, service := range services {
+		cmd := exec.Command(os.Args[0], "-test.run=TestHelperLongRunningProcess", "--")
+		if err := cmd.Start(); err != nil {
+			t.Fatalf("start existing %s helper: %v", service.Name, err)
+		}
+		t.Cleanup(func() {
+			if killErr := cmd.Process.Kill(); killErr != nil && !errors.Is(killErr, os.ErrProcessDone) {
+				t.Logf("kill existing helper %d: %v", cmd.Process.Pid, killErr)
+			}
+			if waitErr := cmd.Wait(); waitErr != nil {
+				t.Logf("wait existing helper %d: %v", cmd.Process.Pid, waitErr)
+			}
+		})
+		writeFile(t, service.PIDPath, strconv.Itoa(cmd.Process.Pid))
+	}
+
+	application := newApp(ioDiscard{}, ioDiscard{}, strings.NewReader(""))
+	application.root = root
+	application.execCommand = func(_ context.Context, name string, args ...string) *exec.Cmd {
+		if name == "go" && len(args) >= 1 && args[0] == "build" {
+			return exec.Command("true")
+		}
+		return exec.Command(os.Args[0], "-test.run=TestHelperLongRunningProcess", "--")
+	}
+	application.waitHTTP = func(_ string, _ string, pidPath string, _ string, _ time.Duration) error {
+		if devservice.ReadPID(pidPath) == 0 {
+			return os.ErrNotExist
+		}
+		return nil
+	}
+
+	probes := 0
+	application.portInUse = func(int) bool {
+		probes++
+		return probes <= 4
+	}
+
+	if err := runDev(context.Background(), application, commandInput{Params: map[string]string{"skip_wasm": "true"}}); err != nil {
+		t.Fatalf("runDev should wait for managed service ports to release, got: %v", err)
+	}
+	if probes < 5 {
+		t.Fatalf("expected runDev to probe ports after stopping managed services, got %d probes", probes)
+	}
+	for _, service := range services {
+		pid := devservice.ReadPID(service.PIDPath)
+		if pid == 0 {
+			t.Fatalf("expected restarted %s pid file to be written", service.Name)
+		}
+		process, err := os.FindProcess(pid)
+		if err == nil {
+			if killErr := process.Kill(); killErr != nil {
+				t.Logf("kill restarted %s process %d: %v", service.Name, pid, killErr)
+			}
+		}
+		if err = os.Remove(service.PIDPath); err != nil && !os.IsNotExist(err) {
+			t.Fatalf("remove restarted %s pid file: %v", service.Name, err)
+		}
+	}
+}
+
+// TestRunDevOnlyWaitsForStoppedManagedPorts verifies that dev does not wait
+// on unrelated occupied ports before surfacing the external occupant error.
+func TestRunDevOnlyWaitsForStoppedManagedPorts(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "go.work"), "go 1.25.0\n")
+	writeFile(t, filepath.Join(root, "apps", "lina-core", "manifest", "config", "config.template.yaml"), "template: true\n")
+	writeFile(t, filepath.Join(root, "apps", "lina-core", "manifest", "config", "config.yaml"), "server:\n  address: \":9120\"\n")
+	writeFile(t, filepath.Join(root, "apps", "lina-vben", "apps", "web-antd", "vite.config.mts"), "proxy: { '/api': { target: 'http://localhost:9120' } }\n")
+	writeFile(t, filepath.Join(root, "apps", "lina-core", "manifest", "config", "metadata.yaml"), "metadata: true\n")
+	writeFile(t, filepath.Join(root, "apps", "lina-core", "manifest", "sql", "001.sql"), "select 1;\n")
+	writeFile(t, filepath.Join(root, "apps", "lina-core", "manifest", "i18n", "en-US", "framework.json"), "{}\n")
+	if err := os.MkdirAll(filepath.Join(root, "apps", "lina-vben", "apps", "web-antd"), 0o755); err != nil {
+		t.Fatalf("mkdir frontend workdir: %v", err)
+	}
+	writeFrontendDependencySentinel(t, root)
+
+	services := devservice.Services(root, defaultBackendPort, defaultFrontendPort)
+	cmd := exec.Command(os.Args[0], "-test.run=TestHelperLongRunningProcess", "--")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start existing backend helper: %v", err)
+	}
+	t.Cleanup(func() {
+		if killErr := cmd.Process.Kill(); killErr != nil && !errors.Is(killErr, os.ErrProcessDone) {
+			t.Logf("kill existing backend helper %d: %v", cmd.Process.Pid, killErr)
+		}
+		if waitErr := cmd.Wait(); waitErr != nil {
+			t.Logf("wait existing backend helper %d: %v", cmd.Process.Pid, waitErr)
+		}
+	})
+	writeFile(t, services[0].PIDPath, strconv.Itoa(cmd.Process.Pid))
+
+	application := newApp(ioDiscard{}, ioDiscard{}, strings.NewReader(""))
+	application.root = root
+	application.execCommand = func(_ context.Context, _ string, _ ...string) *exec.Cmd {
+		return exec.Command("true")
+	}
+
+	backendProbes := 0
+	frontendProbes := 0
+	application.portInUse = func(port int) bool {
+		switch port {
+		case defaultBackendPort:
+			backendProbes++
+			return false
+		case defaultFrontendPort:
+			frontendProbes++
+			return true
+		default:
+			return false
+		}
+	}
+
+	err := runDev(context.Background(), application, commandInput{Params: map[string]string{"skip_wasm": "true"}})
+	if err == nil {
+		t.Fatalf("runDev should reject externally occupied frontend port")
+	}
+	if !strings.Contains(err.Error(), "frontend port") || !strings.Contains(err.Error(), "already in use") {
+		t.Fatalf("expected frontend port-in-use error, got: %v", err)
+	}
+	if frontendProbes != 1 {
+		t.Fatalf("expected frontend port to be checked only by final availability validation, got %d probes", frontendProbes)
+	}
+	if backendProbes < 2 {
+		t.Fatalf("expected backend port to be checked by release wait and final validation, got %d probes", backendProbes)
+	}
+}
+
 func TestRunDevStartsServicesAsAsyncProcessesAndPrintsFinalStatus(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "go.work"), "go 1.25.0\n")

@@ -54,8 +54,12 @@ func runDev(ctx context.Context, a *app, input commandInput) error {
 		"backend_port":  strconv.Itoa(backendPort),
 		"frontend_port": strconv.Itoa(frontendPort),
 	}}
-	if err = runStop(ctx, a, stopInput); err != nil {
+	stoppedPorts, err := stopServices(a, stopInput)
+	if err != nil {
 		return err
+	}
+	if len(stoppedPorts) > 0 {
+		devservice.WaitPortsReleased(a.portInUse, defaultPortReleaseTimeout, stoppedPorts...)
 	}
 
 	// After stopping our own services, verify the ports are actually free.

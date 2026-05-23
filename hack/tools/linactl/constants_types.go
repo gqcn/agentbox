@@ -17,6 +17,9 @@ const (
 	defaultFrontendPort = 5666
 	// defaultWaitTimeout bounds development service readiness checks.
 	defaultWaitTimeout = 60 * time.Second
+	// defaultPortReleaseTimeout bounds how long dev waits for managed old
+	// services to release their TCP ports after StopService sends a kill.
+	defaultPortReleaseTimeout = 5 * time.Second
 )
 
 // errHelpRequested marks help output as a successful early return.

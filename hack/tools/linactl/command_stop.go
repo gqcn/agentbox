@@ -11,22 +11,34 @@ import (
 
 // runStop stops services that were started by linactl.
 func runStop(_ context.Context, a *app, input commandInput) error {
+	_, err := stopServices(a, input)
+	return err
+}
+
+// stopServices stops PID-file-backed development services and returns ports
+// whose recorded processes received a stop signal.
+func stopServices(a *app, input commandInput) ([]int, error) {
 	backendPort, err := input.Int("backend_port", defaultBackendPort)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	frontendPort, err := input.Int("frontend_port", defaultFrontendPort)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if _, err = fmt.Fprintln(a.stdout, "Stopping services..."); err != nil {
-		return fmt.Errorf("write stop output: %w", err)
+		return nil, fmt.Errorf("write stop output: %w", err)
 	}
+	stoppedPorts := make([]int, 0, 2)
 	for _, service := range devservice.Services(a.root, backendPort, frontendPort) {
-		if err = devservice.StopService(a.stdout, service); err != nil {
-			return err
+		stopped, stopErr := devservice.StopService(a.stdout, service)
+		if stopErr != nil {
+			return stoppedPorts, stopErr
+		}
+		if stopped {
+			stoppedPorts = append(stoppedPorts, service.Port)
 		}
 	}
-	return nil
+	return stoppedPorts, nil
 }

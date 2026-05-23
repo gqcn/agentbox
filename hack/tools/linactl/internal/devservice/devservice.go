@@ -190,6 +190,35 @@ func printTableRow(out io.Writer, widths []int, values []string) error {
 // 校验开发端口是否空闲，被占用时直接报错，避免后端启动后 fatal "address already in use"
 // 却被外部占用方的 4xx 响应假装为就绪。
 func EnsurePortsAvailable(probe PortInUseFunc, backendPort int, frontendPort int) error {
+	occupied := occupiedPorts(probe, backendPort, frontendPort)
+	if len(occupied) == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"%s already in use; stop the occupant or choose a different port via the BACKEND_PORT/FRONTEND_PORT make variables",
+		strings.Join(occupied, " and "),
+	)
+}
+
+// WaitPortsReleased waits briefly for TCP ports to become free after managed
+// development services were stopped. It deliberately does not report errors:
+// the caller should run EnsurePortsAvailable afterwards so the final diagnostic
+// remains the same for external occupants and slow process shutdowns.
+func WaitPortsReleased(probe PortInUseFunc, timeout time.Duration, ports ...int) {
+	deadline := time.Now().Add(timeout)
+	for {
+		if len(boundPorts(probe, ports...)) == 0 {
+			return
+		}
+		if timeout <= 0 || time.Now().After(deadline) {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// occupiedPorts returns printable labels for all bound development ports.
+func occupiedPorts(probe PortInUseFunc, backendPort int, frontendPort int) []string {
 	if probe == nil {
 		probe = IsTCPListening
 	}
@@ -207,13 +236,21 @@ func EnsurePortsAvailable(probe PortInUseFunc, backendPort int, frontendPort int
 			occupied = append(occupied, fmt.Sprintf("%s port %d", check.role, check.port))
 		}
 	}
-	if len(occupied) == 0 {
-		return nil
+	return occupied
+}
+
+// boundPorts returns all supplied ports that currently accept TCP connections.
+func boundPorts(probe PortInUseFunc, ports ...int) []int {
+	if probe == nil {
+		probe = IsTCPListening
 	}
-	return fmt.Errorf(
-		"%s already in use; stop the occupant or choose a different port via the BACKEND_PORT/FRONTEND_PORT make variables",
-		strings.Join(occupied, " and "),
-	)
+	occupied := make([]int, 0, len(ports))
+	for _, port := range ports {
+		if probe(port) {
+			occupied = append(occupied, port)
+		}
+	}
+	return occupied
 }
 
 // StartService starts a development service and records its PID file.
@@ -281,8 +318,9 @@ func StartService(root string, stdout io.Writer, stderr io.Writer, env []string,
 	return nil
 }
 
-// StopService stops a PID-file-backed service when possible.
-func StopService(out io.Writer, service Config) error {
+// StopService stops a PID-file-backed service when possible and reports
+// whether it sent a kill signal to the recorded process.
+func StopService(out io.Writer, service Config) (bool, error) {
 	pid := ReadPID(service.PIDPath)
 	stopped := false
 	if pid > 0 {
@@ -294,14 +332,14 @@ func StopService(out io.Writer, service Config) error {
 		}
 	}
 	if err := os.Remove(service.PIDPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("remove %s PID file: %w", service.Name, err)
+		return stopped, fmt.Errorf("remove %s PID file: %w", service.Name, err)
 	}
 	if stopped {
 		fmt.Fprintf(out, "%s stopped\n", service.Name)
-		return nil
+		return true, nil
 	}
 	fmt.Fprintf(out, "%s is not running\n", service.Name)
-	return nil
+	return false, nil
 }
 
 // WaitHTTP waits for one service URL to become ready.
