@@ -1,3 +1,5 @@
+//go:build !wasip1
+
 // This file exposes the narrow host-side plugindb facade while keeping the
 // concrete governance implementation under plugindb/internal.
 

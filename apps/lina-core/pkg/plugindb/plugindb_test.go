@@ -3,6 +3,13 @@
 package plugindb
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	plugindbplan "lina-core/pkg/plugindb/internal/plan"
@@ -47,5 +54,69 @@ func TestQueryBuilderBuildsTypedPlan(t *testing.T) {
 	}
 	if query.plan.Page == nil || query.plan.Page.PageNum != 2 || query.plan.Page.PageSize != 20 {
 		t.Fatalf("unexpected page: %#v", query.plan.Page)
+	}
+}
+
+// TestWasip1GuestBuildDoesNotImportHostDatabaseDependencies verifies dynamic
+// plugin guest builds keep host-side SQL drivers out of the wasm dependency set.
+func TestWasip1GuestBuildDoesNotImportHostDatabaseDependencies(t *testing.T) {
+	t.Parallel()
+
+	moduleRoot, err := plugindbModuleRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("go", "list", "-deps", "-tags", "wasip1", "-json", "./pkg/plugindb")
+	cmd.Dir = moduleRoot
+	cmd.Env = append(os.Environ(), "GOOS=wasip1", "GOARCH=wasm")
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("go list wasip1 plugindb deps failed: %v", err)
+	}
+	packages, err := splitGoListJSONPackages(output)
+	if err != nil {
+		t.Fatalf("split go list package stream: %v", err)
+	}
+	for _, rawPackage := range packages {
+		var pkg struct {
+			ImportPath string
+		}
+		if err := json.Unmarshal(rawPackage, &pkg); err != nil {
+			t.Fatalf("decode go list package: %v", err)
+		}
+		switch {
+		case pkg.ImportPath == "lina-core/pkg/plugindb/internal/host":
+			t.Fatalf("wasip1 plugindb imported host-only package %s", pkg.ImportPath)
+		case strings.HasPrefix(pkg.ImportPath, "github.com/lib/pq"):
+			t.Fatalf("wasip1 plugindb imported PostgreSQL driver package %s", pkg.ImportPath)
+		case pkg.ImportPath == "github.com/gogf/gf/contrib/drivers/pgsql/v2":
+			t.Fatalf("wasip1 plugindb imported GoFrame PostgreSQL driver package %s", pkg.ImportPath)
+		}
+	}
+}
+
+// plugindbModuleRoot returns the lina-core module root for subprocess checks.
+func plugindbModuleRoot() (string, error) {
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(filepath.Join(wd, "..", "..")), nil
+}
+
+// splitGoListJSONPackages splits the concatenated JSON objects emitted by
+// `go list -json` without relying on line-oriented formatting.
+func splitGoListJSONPackages(output []byte) ([][]byte, error) {
+	decoder := json.NewDecoder(bytes.NewReader(output))
+	packages := make([][]byte, 0)
+	for {
+		var raw json.RawMessage
+		if err := decoder.Decode(&raw); err != nil {
+			if err == io.EOF {
+				return packages, nil
+			}
+			return nil, err
+		}
+		packages = append(packages, append([]byte(nil), raw...))
 	}
 }

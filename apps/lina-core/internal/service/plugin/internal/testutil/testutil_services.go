@@ -4,21 +4,29 @@ package testutil
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"lina-core/internal/service/bizctx"
 	"lina-core/internal/service/cachecoord"
 	configsvc "lina-core/internal/service/config"
+	"lina-core/internal/service/hostlock"
 	i18nsvc "lina-core/internal/service/i18n"
+	"lina-core/internal/service/kvcache"
+	"lina-core/internal/service/locker"
+	"lina-core/internal/service/notify"
 	"lina-core/internal/service/plugin/internal/catalog"
 	"lina-core/internal/service/plugin/internal/frontend"
 	"lina-core/internal/service/plugin/internal/integration"
 	"lina-core/internal/service/plugin/internal/lifecycle"
 	"lina-core/internal/service/plugin/internal/openapi"
 	"lina-core/internal/service/plugin/internal/runtime"
+	"lina-core/internal/service/plugin/internal/wasm"
+	tenantcapsvc "lina-core/internal/service/tenantcap"
 	"lina-core/pkg/pluginhost"
 	pluginserviceconfig "lina-core/pkg/pluginservice/config"
 	"lina-core/pkg/pluginservice/contract"
+	pluginservicehostconfig "lina-core/pkg/pluginservice/hostconfig"
 	pluginservicemanifest "lina-core/pkg/pluginservice/manifest"
 )
 
@@ -70,7 +78,11 @@ func NewServices() *Services {
 		runtimeSvc     = runtime.New(catalogSvc, lifecycleSvc, frontendSvc, openapiSvc, i18nService)
 		integrationSvc = integration.New(catalogSvc)
 		topology       = singleNodeTopology{}
+		kvCacheSvc     = kvcache.New()
+		tenantSvc      = tenantcapsvc.New(nil, bizCtxProvider)
+		notifySvc      = notify.New(tenantSvc)
 	)
+	hostLockSvc := mustNewHostLockServiceForTest()
 
 	catalogSvc.SetBackendLoader(integrationSvc)
 	catalogSvc.SetArtifactParser(runtimeSvc)
@@ -97,6 +109,16 @@ func NewServices() *Services {
 	runtimeSvc.SetUserContextSetter(&userCtxAdapter{svc: bizCtxProvider})
 	runtimeSvc.SetTopology(topology)
 
+	mustConfigureWasmHostServicesForTest(
+		kvCacheSvc,
+		hostLockSvc,
+		notifySvc,
+		configProvider,
+		pluginserviceconfig.NewFactory("", ""),
+		pluginservicehostconfig.New(configProvider),
+		pluginservicemanifest.NewFactory(""),
+	)
+
 	return &Services{
 		Catalog:     catalogSvc,
 		Lifecycle:   lifecycleSvc,
@@ -104,6 +126,46 @@ func NewServices() *Services {
 		Frontend:    frontendSvc,
 		Integration: integrationSvc,
 		OpenAPI:     openapiSvc,
+	}
+}
+
+// mustNewHostLockServiceForTest creates the host-lock dependency used by wasm
+// bridge tests. A failure means the fixture wiring is invalid.
+func mustNewHostLockServiceForTest() hostlock.Service {
+	service, err := hostlock.New(locker.New())
+	if err != nil {
+		panic(fmt.Sprintf("configure test host lock service: %v", err))
+	}
+	return service
+}
+
+// mustConfigureWasmHostServicesForTest mirrors the HTTP startup host-service
+// wiring so runtime package tests are self-contained and order independent.
+func mustConfigureWasmHostServicesForTest(
+	kvCacheSvc kvcache.Service,
+	hostLockSvc hostlock.Service,
+	notifySvc notify.Service,
+	configProvider configsvc.Service,
+	configFactory contract.ConfigServiceFactory,
+	hostConfigSvc contract.HostConfigService,
+	manifestFactory contract.ManifestServiceFactory,
+) {
+	configure := []struct {
+		name string
+		fn   func() error
+	}{
+		{name: "cache", fn: func() error { return wasm.ConfigureCacheHostService(kvCacheSvc) }},
+		{name: "lock", fn: func() error { return wasm.ConfigureLockHostService(hostLockSvc) }},
+		{name: "notify", fn: func() error { return wasm.ConfigureNotifyHostService(notifySvc) }},
+		{name: "storage", fn: func() error { return wasm.ConfigureStorageHostService(configProvider) }},
+		{name: "config", fn: func() error { return wasm.ConfigureConfigHostService(configFactory) }},
+		{name: "host config", fn: func() error { return wasm.ConfigureHostConfigService(hostConfigSvc) }},
+		{name: "manifest", fn: func() error { return wasm.ConfigureManifestHostService(manifestFactory) }},
+	}
+	for _, item := range configure {
+		if err := item.fn(); err != nil {
+			panic(fmt.Sprintf("configure test wasm %s host service: %v", item.name, err))
+		}
 	}
 }
 
