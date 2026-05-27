@@ -187,6 +187,7 @@ jobs:
           E2E_BASE_URL: "http://127.0.0.1:5666"
           E2E_API_BASE_URL: "http://127.0.0.1:9120/api/v1/"
           E2E_PUBLIC_BASE_URL: "http://127.0.0.1:9120"
+          E2E_FRONTEND_PROXY_BACKEND_ORIGIN: "http://localhost:9120"
           E2E_PARALLEL_WORKERS: ${{ inputs.parallel-workers }}
         run: ${{ inputs.test-command }}
 
