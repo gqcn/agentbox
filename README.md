@@ -2,8 +2,8 @@
 <img src="https://linapro.ai/img/linapro-logo.png" width="300" alt="linapro logo"/>
 
 [![LinaPro CI](https://github.com/linaproai/linapro/actions/workflows/main-ci.yml/badge.svg)](https://github.com/linaproai/linapro/actions/workflows/main-ci.yml)
-[![LinaPro Stable Release](https://img.shields.io/github/v/release/linaproai/linapro?style=flat&v=0.2.0)](https://github.com/linaproai/linapro/releases)
-[![LinaPro License](https://img.shields.io/github/license/linaproai/linapro.svg?style=flat&v=2)](https://github.com/linaproai/linapro)
+[![LinaPro Stable Release](https://img.shields.io/github/v/release/linaproai/linapro?style=flat&v=0.3.0)](https://github.com/linaproai/linapro/releases)
+[![LinaPro License](https://img.shields.io/github/license/linaproai/linapro.svg?style=flat&v=0.3.0)](https://github.com/linaproai/linapro)
 [![LinaPro Is Production Ready](https://img.shields.io/badge/production-ready-blue.svg?style=flat)](https://github.com/linaproai/linapro)
 
 [![Vue](https://img.shields.io/badge/Vue-3.x-42b883.svg)](https://vuejs.org/)
@@ -102,19 +102,19 @@ graph TB
 
 <table>
   <tr>
-    <td><img src="https://linapro.ai/img/preview/linapro-i18n.webp?v=0.2.0" /></td>
-    <td><img src="https://linapro.ai/img/preview/linapro-plugin.webp?v=0.2.0" /></td>
-    <td><img src="https://linapro.ai/img/preview/linapro-apidoc.webp?v=0.2.0" /></td>
+    <td><img src="https://linapro.ai/img/preview/linapro-i18n.webp?v=0.3.0" /></td>
+    <td><img src="https://linapro.ai/img/preview/linapro-plugin.webp?v=0.3.0" /></td>
+    <td><img src="https://linapro.ai/img/preview/linapro-apidoc.webp?v=0.3.0" /></td>
   </tr>
   <tr>
-    <td><img src="https://linapro.ai/img/preview/linapro-menu.webp?v=0.2.0" /></td>
-    <td><img src="https://linapro.ai/img/preview/linapro-cron.webp?v=0.2.0" /></td>
-    <td><img src="https://linapro.ai/img/preview/linapro-monitor.webp?v=0.2.0" /></td>
+    <td><img src="https://linapro.ai/img/preview/linapro-menu.webp?v=0.3.0" /></td>
+    <td><img src="https://linapro.ai/img/preview/linapro-cron.webp?v=0.3.0" /></td>
+    <td><img src="https://linapro.ai/img/preview/linapro-monitor.webp?v=0.3.0" /></td>
   </tr>
   <tr>
-    <td><img src="https://linapro.ai/img/preview/linapro-sysconfig.webp?v=0.2.0" /></td>
-    <td><img src="https://linapro.ai/img/preview/linapro-user.webp?v=0.2.0" /></td>
-    <td><img src="https://linapro.ai/img/preview/linapro-multitenant-select.webp?v=0.2.0" /></td>
+    <td><img src="https://linapro.ai/img/preview/linapro-sysconfig.webp?v=0.3.0" /></td>
+    <td><img src="https://linapro.ai/img/preview/linapro-user.webp?v=0.3.0" /></td>
+    <td><img src="https://linapro.ai/img/preview/linapro-multitenant-select.webp?v=0.3.0" /></td>
   </tr>
 </table>
 
