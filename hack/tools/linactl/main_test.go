@@ -205,32 +205,77 @@ func TestCommandRegistryRemovesExternalGoFrameInstaller(t *testing.T) {
 // linactl child entry instead of resolving or executing gf from PATH.
 func TestRunCtrlDispatchesEmbeddedGoFrame(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "apps", "lina-core"), 0o755); err != nil {
-		t.Fatalf("mkdir core dir: %v", err)
-	}
+	writeFile(t, filepath.Join(root, "apps", "lina-core", "hack", "config.yaml"), "gfcli: {}\n")
 	application, calls := newGoFrameDispatchTestApp(t, root, filepath.Join(root, "linactl-test"))
 
 	if err := runCtrl(context.Background(), application, commandInput{}); err != nil {
 		t.Fatalf("runCtrl returned error: %v", err)
 	}
 
-	requireSingleGoFrameDispatch(t, calls, root, filepath.Join(root, "linactl-test"), []string{"__goframe", "gen", "ctrl"})
+	requireSingleGoFrameDispatch(t, calls, filepath.Join(root, "apps", "lina-core"), filepath.Join(root, "linactl-test"), []string{"__goframe", "gen", "ctrl"})
 }
 
 // TestRunDaoDispatchesEmbeddedGoFrame verifies linactl dao starts the hidden
 // linactl child entry instead of resolving or executing gf from PATH.
 func TestRunDaoDispatchesEmbeddedGoFrame(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "apps", "lina-core"), 0o755); err != nil {
-		t.Fatalf("mkdir core dir: %v", err)
-	}
+	writeFile(t, filepath.Join(root, "apps", "lina-core", "hack", "config.yaml"), "gfcli: {}\n")
 	application, calls := newGoFrameDispatchTestApp(t, root, filepath.Join(root, "linactl-test"))
 
 	if err := runDao(context.Background(), application, commandInput{}); err != nil {
 		t.Fatalf("runDao returned error: %v", err)
 	}
 
-	requireSingleGoFrameDispatch(t, calls, root, filepath.Join(root, "linactl-test"), []string{"__goframe", "gen", "dao"})
+	requireSingleGoFrameDispatch(t, calls, filepath.Join(root, "apps", "lina-core"), filepath.Join(root, "linactl-test"), []string{"__goframe", "gen", "dao"})
+}
+
+// TestRunCtrlDispatchesToPluginBackend verifies plugin ID targeting resolves
+// to the plugin backend GoFrame project directory.
+func TestRunCtrlDispatchesToPluginBackend(t *testing.T) {
+	root := t.TempDir()
+	pluginBackend := filepath.Join(root, "apps", "lina-plugins", "demo-plugin", "backend")
+	writeFile(t, filepath.Join(pluginBackend, "hack", "config.yaml"), "gfcli: {}\n")
+	application, calls := newGoFrameDispatchTestApp(t, root, filepath.Join(root, "linactl-test"))
+
+	if err := runCtrl(context.Background(), application, commandInput{Params: map[string]string{"p": "demo-plugin"}}); err != nil {
+		t.Fatalf("runCtrl returned error: %v", err)
+	}
+
+	requireSingleGoFrameDispatch(t, calls, pluginBackend, filepath.Join(root, "linactl-test"), []string{"__goframe", "gen", "ctrl"})
+}
+
+// TestRunDaoDispatchesToExplicitBackendDir verifies Makefile wrappers can pass
+// a relative backend directory directly.
+func TestRunDaoDispatchesToExplicitBackendDir(t *testing.T) {
+	root := t.TempDir()
+	pluginBackend := filepath.Join(root, "apps", "lina-plugins", "demo-plugin", "backend")
+	writeFile(t, filepath.Join(pluginBackend, "hack", "config.yaml"), "gfcli: {}\n")
+	application, calls := newGoFrameDispatchTestApp(t, root, filepath.Join(root, "linactl-test"))
+
+	if err := runDao(context.Background(), application, commandInput{Params: map[string]string{"dir": "apps/lina-plugins/demo-plugin/backend"}}); err != nil {
+		t.Fatalf("runDao returned error: %v", err)
+	}
+
+	requireSingleGoFrameDispatch(t, calls, pluginBackend, filepath.Join(root, "linactl-test"), []string{"__goframe", "gen", "dao"})
+}
+
+// TestRunDaoRejectsTargetWithoutGoFrameConfig keeps failures actionable before
+// the hidden GoFrame subprocess is started.
+func TestRunDaoRejectsTargetWithoutGoFrameConfig(t *testing.T) {
+	root := t.TempDir()
+	pluginBackend := filepath.Join(root, "apps", "lina-plugins", "demo-plugin", "backend")
+	if err := os.MkdirAll(pluginBackend, 0o755); err != nil {
+		t.Fatalf("mkdir plugin backend: %v", err)
+	}
+	application, calls := newGoFrameDispatchTestApp(t, root, filepath.Join(root, "linactl-test"))
+
+	err := runDao(context.Background(), application, commandInput{Params: map[string]string{"p": "demo-plugin"}})
+	if err == nil || !strings.Contains(err.Error(), "missing hack/config.yaml") {
+		t.Fatalf("expected missing config error, got %v", err)
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("hidden GoFrame child should not run for invalid target: %#v", *calls)
+	}
 }
 
 // TestRunEmbeddedGoFrameRejectsParameters verifies the hidden entry has a
@@ -257,6 +302,7 @@ func TestEmbeddedGoFrameCtrlSmokeWithoutExternalGF(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(coreDir, "hack"), 0o755); err != nil {
 		t.Fatalf("mkdir core hack dir: %v", err)
 	}
+	writeFile(t, filepath.Join(coreDir, "hack", "config.yaml"), "gfcli: {}\n")
 	writeFile(t, filepath.Join(coreDir, "go.mod"), `module example.com/smoke
 
 go 1.25.0
@@ -275,6 +321,7 @@ type HelloRes struct{}
 `)
 
 	helper := exec.Command(os.Args[0], "-test.run=TestHelperEmbeddedGoFrameCtrl", "--", root)
+	helper.Dir = coreDir
 	helper.Env = []string{
 		"PATH=",
 		"HOME=" + t.TempDir(),
@@ -2053,6 +2100,7 @@ func writeFile(t *testing.T, path string, content string) {
 type capturedCommand struct {
 	name string
 	args []string
+	cmd  *exec.Cmd
 }
 
 func newGoFrameDispatchTestApp(t *testing.T, root string, executable string) (*app, *[]capturedCommand) {
@@ -2073,16 +2121,18 @@ func newGoFrameDispatchTestApp(t *testing.T, root string, executable string) (*a
 		if name == "gf" {
 			t.Fatalf("GoFrame generation must not execute external gf")
 		}
+		cmd := exec.Command(os.Args[0], "-test.run=TestHelperCommandSuccess", "--")
 		calls = append(calls, capturedCommand{
 			name: name,
 			args: append([]string(nil), args...),
+			cmd:  cmd,
 		})
-		return exec.Command(os.Args[0], "-test.run=TestHelperCommandSuccess", "--")
+		return cmd
 	}
 	return application, &calls
 }
 
-func requireSingleGoFrameDispatch(t *testing.T, calls *[]capturedCommand, root string, executable string, expectedArgs []string) {
+func requireSingleGoFrameDispatch(t *testing.T, calls *[]capturedCommand, expectedDir string, executable string, expectedArgs []string) {
 	t.Helper()
 	if len(*calls) != 1 {
 		t.Fatalf("expected one child command, got %d: %#v", len(*calls), *calls)
@@ -2090,6 +2140,12 @@ func requireSingleGoFrameDispatch(t *testing.T, calls *[]capturedCommand, root s
 	call := (*calls)[0]
 	if call.name != executable {
 		t.Fatalf("child command name mismatch: got %q want %q", call.name, executable)
+	}
+	if call.cmd == nil {
+		t.Fatalf("child command was not captured")
+	}
+	if call.cmd.Dir != expectedDir {
+		t.Fatalf("child command dir mismatch: got %q want %q", call.cmd.Dir, expectedDir)
 	}
 	if len(call.args) != len(expectedArgs) {
 		t.Fatalf("child command args length mismatch: got %#v want %#v", call.args, expectedArgs)

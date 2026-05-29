@@ -5,6 +5,7 @@ package goframecli
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -13,9 +14,10 @@ import (
 	"linactl/internal/toolrun"
 )
 
-func TestRunDispatchesHiddenCommandInCoreDir(t *testing.T) {
+func TestRunDispatchesHiddenCommandInTargetDir(t *testing.T) {
 	root := t.TempDir()
 	binary := filepath.Join(root, "bin", "linactl")
+	targetDir := filepath.Join(root, "apps", "lina-plugins", "demo", "backend")
 
 	for _, tc := range []struct {
 		name string
@@ -39,7 +41,7 @@ func TestRunDispatchesHiddenCommandInCoreDir(t *testing.T) {
 				return nil
 			}
 
-			err := Run(context.Background(), root, func() (string, error) {
+			err := Run(context.Background(), targetDir, func() (string, error) {
 				return binary, nil
 			}, runner, tc.args...)
 			if err != nil {
@@ -55,11 +57,42 @@ func TestRunDispatchesHiddenCommandInCoreDir(t *testing.T) {
 			if !reflect.DeepEqual(gotArgs, expectedArgs) {
 				t.Fatalf("runner args mismatch: got %#v want %#v", gotArgs, expectedArgs)
 			}
-			expectedDir := filepath.Join(root, "apps", "lina-core")
-			if gotOptions.Dir != expectedDir {
-				t.Fatalf("runner dir mismatch: got %q want %q", gotOptions.Dir, expectedDir)
+			if gotOptions.Dir != targetDir {
+				t.Fatalf("runner dir mismatch: got %q want %q", gotOptions.Dir, targetDir)
 			}
 		})
+	}
+}
+
+func TestResolveTargetDirAllowsControllerTargetWithoutHackConfig(t *testing.T) {
+	root := t.TempDir()
+	targetDir := filepath.Join(root, "apps", "lina-plugins", "demo", "backend")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatalf("mkdir target dir: %v", err)
+	}
+
+	resolved, err := ResolveTargetDir(root, TargetOptions{PluginID: "demo", PluginIDSet: true})
+	if err != nil {
+		t.Fatalf("ResolveTargetDir returned error: %v", err)
+	}
+	if resolved != targetDir {
+		t.Fatalf("target mismatch: got %q want %q", resolved, targetDir)
+	}
+
+	_, err = ResolveTargetDir(root, TargetOptions{PluginID: "demo", PluginIDSet: true, RequireConfig: true})
+	if err == nil || !strings.Contains(err.Error(), "missing hack/config.yaml") {
+		t.Fatalf("expected missing config error, got %v", err)
+	}
+
+	configPath := filepath.Join(targetDir, "hack", "config.yaml")
+	if err = os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("mkdir config dir: %v", err)
+	}
+	if err = os.WriteFile(configPath, []byte("gfcli: {}\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	if err = ValidateTargetConfig(targetDir); err != nil {
+		t.Fatalf("ValidateTargetConfig returned error: %v", err)
 	}
 }
 
@@ -144,5 +177,32 @@ func TestRunEmbeddedRejectsUnsupportedCommandsBeforeChangingDirectory(t *testing
 	}
 	if current != original {
 		t.Fatalf("RunEmbedded changed directory before validating args: got %q want %q", current, original)
+	}
+}
+
+func TestConfigureGoFrameCLIAllowsCtrlWithoutHackConfig(t *testing.T) {
+	original, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	targetDir := t.TempDir()
+	if err = os.Chdir(targetDir); err != nil {
+		t.Fatalf("chdir target: %v", err)
+	}
+	t.Cleanup(func() {
+		if chdirErr := os.Chdir(original); chdirErr != nil {
+			t.Fatalf("restore working directory: %v", chdirErr)
+		}
+	})
+
+	cleanup, err := configureGoFrameCLI(false)
+	if err != nil {
+		t.Fatalf("configureGoFrameCLI for ctrl returned error: %v", err)
+	}
+	cleanup()
+
+	_, err = configureGoFrameCLI(true)
+	if err == nil || !strings.Contains(err.Error(), "missing hack/config.yaml") {
+		t.Fatalf("expected dao config error, got %v", err)
 	}
 }

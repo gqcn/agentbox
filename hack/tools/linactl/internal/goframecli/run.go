@@ -16,9 +16,9 @@ const hiddenCommand = "__goframe"
 // Executable resolves the current linactl executable path.
 type Executable func() (string, error)
 
-// Run executes a whitelisted embedded GoFrame CLI command inside the core
-// application directory through linactl's hidden child command.
-func Run(ctx context.Context, root string, executable Executable, run toolrun.Runner, args ...string) error {
+// Run executes a whitelisted embedded GoFrame CLI command inside the target
+// GoFrame project directory through linactl's hidden child command.
+func Run(ctx context.Context, targetDir string, executable Executable, run toolrun.Runner, args ...string) error {
 	if err := validateArgs(args); err != nil {
 		return err
 	}
@@ -27,7 +27,7 @@ func Run(ctx context.Context, root string, executable Executable, run toolrun.Ru
 		return fmt.Errorf("resolve linactl executable: %w", err)
 	}
 	childArgs := append([]string{hiddenCommand}, args...)
-	return run(ctx, toolrun.Options{Dir: coreDir(root)}, binary, childArgs...)
+	return run(ctx, toolrun.Options{Dir: targetDir}, binary, childArgs...)
 }
 
 // coreDir returns the GoFrame project directory used for code generation.

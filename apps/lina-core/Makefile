@@ -1,7 +1,6 @@
-DOCKER_NAME = "template-single"
-
-include ./hack/hack-cli.mk
-include ./hack/hack.mk
+# LinaPro core backend Makefile.
+# This file is intentionally a thin wrapper around the repository-level
+# linactl tool so code generation and build behavior stay centralized.
 
 # pack.assets: Prepare host manifest and plugin embedded assets for backend packaging
 # pack.assets: 准备宿主 manifest 与插件相关嵌入资源，供后续后端构建打包使用
@@ -24,3 +23,15 @@ init:
 .PHONY: mock
 mock:
 	@go run ../../hack/tools/linactl mock confirm=$(confirm)
+
+# ctrl: Generate host GoFrame controller scaffolding
+# ctrl: 生成宿主 GoFrame 控制器骨架
+.PHONY: ctrl
+ctrl:
+	@go run ../../hack/tools/linactl ctrl dir=apps/lina-core
+
+# dao: Generate host DAO/DO/Entity files
+# dao: 生成宿主 DAO/DO/Entity 文件
+.PHONY: dao
+dao:
+	@go run ../../hack/tools/linactl dao dir=apps/lina-core
