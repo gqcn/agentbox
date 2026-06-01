@@ -98,8 +98,8 @@ make stop                        # Stop all services
 make status                      # Check service status
 make dev.setup                  # Install frontend deps + Playwright browsers (first time only)
 make test                        # Run the full E2E suite
-make init                        # Initialize the database (DDL + seed data)
-make mock                        # Load mock demo data; run init first
+make db.init                     # Initialize the database (DDL + seed data)
+make db.mock                     # Load mock demo data; run db.init first
 make image tag=v0.6.0            # Build the production Docker image
 make release.tag.check tag=v0.6.0 # Verify the release tag matches metadata.yaml framework.version
 make up                          # Generate a commit message with claude and push by default
@@ -182,7 +182,7 @@ cd linapro
 git submodule update --init --recursive
 
 # 3. Initialize the database (DDL + seed data)
-make init
+make db.init
 
 # 4. Start the full stack (frontend: 5666, backend: 9120)
 make dev
@@ -219,7 +219,7 @@ cd apps/lina-core
 make ctrl
 
 # After adding or modifying manifest/sql/*.sql
-make init
+make db.init
 make dao
 ```
 

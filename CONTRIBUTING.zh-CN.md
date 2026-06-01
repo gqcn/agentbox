@@ -98,8 +98,8 @@ make stop                        # 停止所有服务
 make status                      # 查看服务状态
 make dev.setup                  # 安装前端依赖及Playwright浏览器（仅首次）
 make test                        # 运行完整E2E测试
-make init                        # 初始化数据库（DDL + Seed数据）
-make mock                        # 加载Mock演示数据（需先执行init）
+make db.init                     # 初始化数据库（DDL + Seed数据）
+make db.mock                     # 加载Mock演示数据（需先执行db.init）
 make image tag=v0.6.0            # 构建生产Docker镜像
 make release.tag.check tag=v0.6.0 # 校验发布标签必须等于metadata.yaml中的framework.version
 make up                          # 默认用claude生成commit message并推送
@@ -182,7 +182,7 @@ cd linapro
 git submodule update --init --recursive
 
 # 3. 初始化数据库（DDL + Seed数据）
-make init
+make db.init
 
 # 4. 启动全栈服务（前端: 5666，后端: 9120）
 make dev
@@ -219,7 +219,7 @@ cd apps/lina-core
 make ctrl
 
 # 新增或修改manifest/sql/*.sql后
-make init
+make db.init
 make dao
 ```
 

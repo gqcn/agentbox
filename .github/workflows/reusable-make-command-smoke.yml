@@ -26,8 +26,8 @@ jobs:
     timeout-minutes: 30
 
     services:
-      # Provides the database used by make init and make mock smoke checks.
-      # 提供 make init 与 make mock 冒烟检查使用的数据库。
+      # Provides the database used by make db.init and make db.mock smoke checks.
+      # 提供 make db.init 与 make db.mock 冒烟检查使用的数据库。
       postgres:
         image: postgres:14-alpine
         env:
@@ -63,8 +63,8 @@ jobs:
         run: |
           cp apps/lina-core/manifest/config/config.template.yaml apps/lina-core/manifest/config/config.yaml
           make pack.assets
-          make init confirm=init
-          make mock confirm=mock
+          make db.init confirm=init
+          make db.mock confirm=mock
 
       # Verify dev/status/stop through an isolated repository fixture with lightweight services.
       # 使用轻量服务 fixture 隔离验证 dev/status/stop 指令。

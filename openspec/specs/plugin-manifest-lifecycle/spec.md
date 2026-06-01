@@ -114,7 +114,7 @@
 - **且** 卸载流程不依赖原 MySQL 方言专属语法
 
 #### Scenario:插件 mock-data 加载时 SQL 走方言转译
-- **当** 运维人员运行 `make mock confirm=mock` 且某插件提供 `manifest/sql/mock-data/*.sql` 时
+- **当** 运维人员运行 `make db.mock confirm=mock` 且某插件提供 `manifest/sql/mock-data/*.sql` 时
 - **则** mock 加载管线对每个 mock SQL 文件调用当前方言的 `TranslateDDL`
 - **且** 返回的 `INSERT INTO` 等 PostgreSQL 语句在当前数据库上成功执行
 

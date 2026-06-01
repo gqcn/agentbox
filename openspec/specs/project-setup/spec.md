@@ -35,7 +35,7 @@
 - **WHEN** 后端服务启动且 `database.default.link` 以 `pgsql:` 开头
 - **THEN** 后端通过 GoFrame PG 驱动连接到 PostgreSQL 数据库
 - **AND** 服务启动不创建、删除或重建数据库
-- **AND** 数据库创建、重建和 SQL 加载仅由 `make init confirm=init` / `make init confirm=init rebuild=true` 等运维初始化命令触发
+- **AND** 数据库创建、重建和 SQL 加载仅由 `make db.init confirm=init` / `make db.init confirm=init rebuild=true` 等运维初始化命令触发
 - **AND** 业务文本键的唯一约束和等值匹配按 PostgreSQL 默认大小写敏感语义工作
 
 #### Scenario: SQLite 链接被显式拒绝

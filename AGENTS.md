@@ -179,7 +179,7 @@ Go代码生成流程细则由`.agents/rules/backend-go.md`、`.agents/rules/api-
 以下任一场景命中时，必须读取对应规则文件：
 
 - API 变更、`api/{resource}/v1/*.go`变更或`make ctrl`相关变更
-- 数据库变更、`manifest/sql/`变更、`make init`或`make dao`相关变更
+- 数据库变更、`manifest/sql/`变更、`make db.init`或`make dao`相关变更
 - 生成或修改 controller、DAO、DO、Entity 等脚手架维护代码
 
 ## SQL文件管理规范

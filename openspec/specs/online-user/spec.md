@@ -145,7 +145,7 @@
 
 #### Scenario:索引存在
 
-- **当** `make init` 完成数据库初始化时
+- **当** `make db.init` 完成数据库初始化时
 - **则** `SHOW INDEX FROM sys_online_session` 必须包含列 `last_active_time` 上的 `idx_last_active_time`
 
 #### Scenario:不活跃会话清理使用索引

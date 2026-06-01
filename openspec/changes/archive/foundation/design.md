@@ -8,7 +8,7 @@ LinaPro 初始形态提供一个可登录、可导航、可管理用户的默认
 
 ## Project Setup Baseline
 
-项目基础启动路径以“面向可持续交付的`AI`原生全栈框架”为定位，默认后端服务、前端工作台、数据库初始化和 mock 数据加载共同构成新开发者的首个可运行路径。后续默认数据库切换到 PostgreSQL 后，基础启动要求变为：先准备 PostgreSQL 14+，再运行`make init confirm=init`、`make mock confirm=mock`和开发服务；SQLite 只作为开发/演示方言，启动时必须提示不得用于生产。
+项目基础启动路径以“面向可持续交付的`AI`原生全栈框架”为定位，默认后端服务、前端工作台、数据库初始化和 mock 数据加载共同构成新开发者的首个可运行路径。后续默认数据库切换到 PostgreSQL 后，基础启动要求变为：先准备 PostgreSQL 14+，再运行`make db.init confirm=init`、`make db.mock confirm=mock`和开发服务；SQLite 只作为开发/演示方言，启动时必须提示不得用于生产。
 
 MySQL 支持被彻底移除，`mysql:`链接必须显式失败，不允许静默回退。数据库创建、重建和 SQL 加载由运维初始化命令触发，运行时服务不负责低权限建库兜底。
 

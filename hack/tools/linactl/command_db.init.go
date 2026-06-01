@@ -1,4 +1,4 @@
-// This file implements the init command for database initialization.
+// This file implements the db.init command for database initialization.
 
 package main
 
@@ -17,7 +17,7 @@ import (
 // runInit initializes the configured database after explicit confirmation.
 func runInit(ctx context.Context, a *app, input commandInput) error {
 	if input.Get("confirm") != "init" {
-		return errors.New("init requires explicit confirmation: linactl init confirm=init")
+		return errors.New("db.init requires explicit confirmation: linactl db.init confirm=init")
 	}
 
 	args := []string{"run", "main.go", "init", "--confirm=init", "--sql-source=local"}

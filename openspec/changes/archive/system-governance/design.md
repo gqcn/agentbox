@@ -38,7 +38,7 @@
 
 ## Feedback And Verification Notes
 
-历史验证覆盖后端单元测试、E2E、OpenSpec 校验、`make init`、`make dao`、前端 typecheck 和`lina-review`。数据权限部分重点验证了 superadmin、multi-role 最宽范围、禁用角色、无上下文失败关闭、组织能力降级、用户/文件/任务/在线会话读写边界和用户消息自隔离。
+历史验证覆盖后端单元测试、E2E、OpenSpec 校验、`make db.init`、`make dao`、前端 typecheck 和`lina-review`。数据权限部分重点验证了 superadmin、multi-role 最宽范围、禁用角色、无上下文失败关闭、组织能力降级、用户/文件/任务/在线会话读写边界和用户消息自隔离。
 
 关键风险包括异步日志在进程崩溃时可能少量丢失、日志表长期增长、MEMORY engine 会话重启丢失、监控指标有采集延迟、iframe 依赖外部站点、部门范围可能产生大用户集合、误把全局治理数据纳入数据权限过滤以及组织能力缺失时的降级策略。最终设计通过清理能力、抽象会话存储、数据库侧半连接、明确排除列表和失败关闭策略降低风险。
 

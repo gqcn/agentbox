@@ -117,12 +117,12 @@
 
 #### Scenario:sys_job 表不再包含外键约束
 
-- **当** `make init` 完成数据库初始化时
+- **当** `make db.init` 完成数据库初始化时
 - **则** `sys_job` 表不得包含 `fk_sys_job_group_id` 或任何指向 `sys_job_group` 的 `FOREIGN KEY` 约束
 
 #### Scenario:sys_job 保留 group_id 索引
 
-- **当** `make init` 完成数据库初始化时
+- **当** `make db.init` 完成数据库初始化时
 - **则** `SHOW INDEX FROM sys_job` 必须包含列 `group_id` 上的 `idx_group_id`
 
 #### Scenario:写路径验证 group_id 引用一致性

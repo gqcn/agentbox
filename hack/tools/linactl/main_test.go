@@ -109,6 +109,22 @@ func TestCommandRegistryUsesDottedPackAssetsCommand(t *testing.T) {
 	}
 }
 
+// TestCommandRegistryUsesDottedDatabaseCommands guards the public database
+// command names.
+func TestCommandRegistryUsesDottedDatabaseCommands(t *testing.T) {
+	registry := commandRegistry()
+	for _, name := range []string{"db.init", "db.mock"} {
+		if _, ok := registry[name]; !ok {
+			t.Fatalf("expected command %q to be registered", name)
+		}
+	}
+	for _, name := range []string{"init", "mock"} {
+		if _, ok := registry[name]; ok {
+			t.Fatalf("legacy command %q should not be registered", name)
+		}
+	}
+}
+
 // TestCommandRegistryIncludesReleaseTagCheck verifies the public release
 // governance command name.
 func TestCommandRegistryIncludesReleaseTagCheck(t *testing.T) {

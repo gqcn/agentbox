@@ -6,7 +6,7 @@
 
 ## Go 代码生成流程
 
-- 数据库变更应新增或修改当前迭代对应的`manifest/sql/{序号}-{迭代名称}.sql`，执行`make init`更新数据库，再执行`make dao`生成或更新 Go 源码文件。
+- 数据库变更应新增或修改当前迭代对应的`manifest/sql/{序号}-{迭代名称}.sql`，执行`make db.init`更新数据库，再执行`make dao`生成或更新 Go 源码文件。
 - `DAO/DO/Entity`源码文件由`make dao`自动生成，不要手动创建或修改。
 
 ## SQL 文件命名和版本管理

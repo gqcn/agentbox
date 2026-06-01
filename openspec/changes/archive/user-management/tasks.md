@@ -8,5 +8,5 @@
 - [x] 完成菜单与角色前端体验闭环：菜单树表、菜单抽屉、父级选择、角色授权树、角色用户授权、用户角色列、登录页右侧布局和系统参数切换均通过 E2E 或手工验证。
 - [x] 反馈闭环：菜单和角色页面问题主要来自字典异步加载、树形数据处理、抽屉状态字段、默认值初始化和样式不一致；租户权限反馈主要来自共享插件快照污染、租户归属漏写、mock 授权过宽、API 枚举类型过宽和租户登录过渡态闪烁。
 - [x] 关键修复：租户上下文不能覆盖平台插件启用快照；文件上传、用户导入、字典/配置导入和任务日志写入补齐租户归属；tenant-user mock 授权排除平台服务监控；有限 API 字段改为命名枚举；租户选择登录增加过渡加载状态；临时`*_enum.go`合并回 API 主 DTO 文件。
-- [x] 验证：历史实现覆盖`make init`、`make dao`、`make ctrl`、后端单元测试、前端 typecheck、i18n 检查、E2E TypeScript 校验、Playwright 用例、OpenSpec 严格校验、diff 空白检查和`lina-review`。
+- [x] 验证：历史实现覆盖`make db.init`、`make dao`、`make ctrl`、后端单元测试、前端 typecheck、i18n 检查、E2E TypeScript 校验、Playwright 用例、OpenSpec 严格校验、diff 空白检查和`lina-review`。
 - [x] 治理：本归档压缩不修改运行时代码、HTTP API、数据库、缓存、数据权限、前端 UI、插件源码、运行时文案、语言包、`manifest/i18n`、`apidoc i18n JSON`、开发工具入口或生产构建；非 owner 能力已迁移为`design.md`交叉影响摘要。

@@ -30,7 +30,7 @@
 
 #### Scenario: 参数透传
 
-- **WHEN** Windows 用户执行 `make init confirm=init rebuild=true`
+- **WHEN** Windows 用户执行 `make db.init confirm=init rebuild=true`
 - **THEN** `make.cmd` MUST 原样透传 `init`、`confirm=init` 和 `rebuild=true` 参数，并返回跨平台命令主入口的退出码
 
 ### Requirement: Makefile 兼容层
@@ -39,7 +39,7 @@
 
 #### Scenario: 既有 make 目标继续可用
 
-- **WHEN** Linux/macOS 开发者执行现有 `make dev`、`make build`、`make init confirm=init` 等命令
+- **WHEN** Linux/macOS 开发者执行现有 `make dev`、`make build`、`make db.init confirm=init` 等命令
 - **THEN** 系统 MUST 保持目标语义兼容，并通过跨平台命令主入口或等价跨平台工具实现任务编排
 
 #### Scenario: 开发服务异步启动与最终状态输出
@@ -59,7 +59,7 @@
 #### Scenario: 初始化参数兼容
 
 - **WHEN** 开发者执行跨平台命令主入口 `init confirm=init rebuild=true`
-- **THEN** 系统 MUST 将 `confirm=init` 和 `rebuild=true` 识别为初始化任务参数，并保持与现有 `make init confirm=init rebuild=true` 等价的行为
+- **THEN** 系统 MUST 将 `confirm=init` 和 `rebuild=true` 识别为初始化任务参数，并保持与现有 `make db.init confirm=init rebuild=true` 等价的行为
 
 #### Scenario: 构建参数兼容
 

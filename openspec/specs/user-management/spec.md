@@ -217,5 +217,5 @@
 系统 SHALL 在 `sys_user` 表上维护 `KEY idx_status (status)`、`KEY idx_phone (phone)` 和 `KEY idx_created_at (created_at)`，使按状态、手机或创建时间范围筛选的用户列表查询避免全表扫描。
 
 #### Scenario:init 后 sys_user 索引存在
-- **当** `make init` 完成数据库初始化时
+- **当** `make db.init` 完成数据库初始化时
 - **则** `SHOW INDEX FROM sys_user` 除现有主键和 `username` 唯一键外，返回 `idx_status`、`idx_phone` 和 `idx_created_at` 条目

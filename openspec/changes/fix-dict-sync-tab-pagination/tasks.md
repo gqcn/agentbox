@@ -40,7 +40,7 @@
 - 缓存一致性影响：涉及工作台页面实例 keep-alive，不涉及后端分布式缓存；权威数据源为 `sys_menu.is_cache`，`/menus/all` 投影 `meta.keepAlive`；前端路由缓存按该投影生效。
 - 数据权限影响：无新增或修改数据读取、写入或权限判断；菜单可见性和权限仍由现有菜单/角色逻辑控制。
 - API 契约影响：无新增 HTTP API、路由、DTO、响应字段或前后端接口契约变化；`/menus/all` 继续投影既有 `meta.keepAlive` 字段。
-- 开发工具跨平台影响：无 Makefile、脚本、CI、代码生成或 `linactl` 变更；`make init` 仅作为验证入口。
+- 开发工具跨平台影响：无 Makefile、脚本、CI、代码生成或 `linactl` 变更；`make db.init` 仅作为验证入口。
 - SQL 影响：修改宿主 Seed DML 中内建可分页 routed 菜单的 `is_cache` 值为 `1`；使用既有 `INSERT ... ON CONFLICT DO NOTHING` 幂等模式，不写自增 ID，不修改 DDL、索引或 DAO。
 - 后端 Go 影响：无 Go 生产代码、Controller、Service、DAO 或运行期依赖变更。
 - 插件影响：未修改 `apps/lina-plugins/<plugin-id>/` 下文件；插件管理宿主菜单只是宿主 seed 行，未改变插件资源或插件接口契约。
@@ -48,7 +48,7 @@
 
 ### FB-2 验证记录
 
-- `make init confirm=init`：通过，执行到 `012-distributed-cache-consistency.sql`，无额外 `013` 补丁 SQL。
+- `make db.init confirm=init`：通过，执行到 `012-distributed-cache-consistency.sql`，无额外 `013` 补丁 SQL。
 - `cd apps/lina-core && go test ./pkg/dialect -run 'Test.*SQL|TestHostSQL|TestSeed' -count=1`：通过。
 - `cd hack/tests && npx playwright test e2e/settings/dict/TC010-dict-label-sync-and-tab-pagination.ts`：通过，`TC-10b` 覆盖内建菜单 `isCache=1` 和 Tab 切回后字典数据分页仍在第 2 页。
 - `git diff --check`：通过。

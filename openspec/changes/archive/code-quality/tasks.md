@@ -9,11 +9,11 @@
 - [x] 完成测试效率治理：Go 主单测路径保留`-race`；真实 dynamic Wasm 执行收敛到 smoke；普通插件测试使用 synthetic artifact、fake executor 和轻量 fixture；`linactl test.go`输出测试计划和耗时摘要。
 - [x] 反馈`FB-1`~`FB-3`：API 输入 DTO 标签、实现范围和路由地址漂移；根因：接口治理整改扩大到不必要范围且参数标签不统一；处理：统一`json`参数标签，保持既有路由地址，撤回越界模块开关；验证：API/前端调用与 OpenSpec 校验通过。
 - [x] 反馈`FB-4`~`FB-8`：运行时配置错误、关闭错误日志、ctx 传递和`panic` allowlist 检查边界；根因：可恢复错误与诊断路径混用；处理：显式返回错误、补充调用上下文、迁移 allowlist 检查并降低扫描耦合；验证：静态检查和相关 Go 测试通过。
-- [x] 反馈`FB-9`~`FB-17`：SQL 注释、上传路由、shutdown、HTTP 文件拆分、健康超时、配置/中间件接口、插件安装 SQL 和字典 E2E；根因：治理细节分散在启动、SQL、接口和测试边界；处理：按 owner 模块收口并补充保护；验证：`make init`、E2E、OpenSpec 和审查通过。
+- [x] 反馈`FB-9`~`FB-17`：SQL 注释、上传路由、shutdown、HTTP 文件拆分、健康超时、配置/中间件接口、插件安装 SQL 和字典 E2E；根因：治理细节分散在启动、SQL、接口和测试边界；处理：按 owner 模块收口并补充保护；验证：`make db.init`、E2E、OpenSpec 和审查通过。
 - [x] 反馈`FB-18`~`FB-24`：启动重复 SQL、内置任务幂等、startup snapshot、时间戳响应和标准库时间类型；根因：启动阶段反复扫描、无差异仍写库、API 时间边界未落地；处理：共享快照、差异同步、投影复用、`pkg/apitime`和 DAO 标准时间配置；验证：启动测试、Go 测试、前端适配和 apidoc i18n 资源同步通过。
 - [x] 反馈`FB-25`~`FB-27`：文件顶部注释、`linactl`命名和根目录共享实现堆积；根因：文件职责和开发工具子组件边界不清；处理：补充职责注释、建立`command_<command>.go`约束、迁移共享实现到`internal/<component>/`；验证：静态检索、命令 smoke 和审查通过。
 - [x] 反馈`FB-28`~`FB-45`：服务构造、WASM host service、插件 host service、源码插件 controller、tenant/bizctx/sourceupgrade 和聚合依赖结构体；根因：运行期依赖通过隐式`New()`、包级默认实例或聚合结构体隐藏；处理：启动期显式注入、host service 目录发布、能力契约收敛和规则文件/审查项更新；验证：静态扫描、host/source-plugin/WASM 相关测试和`lina-review`通过。
 - [x] 反馈`FB-46`~`FB-52`：重复 controller 声明、运行时初始化`panic`、源码插件注册`panic`、过长 pluginhost 文件、半初始化 tenant service、panic allowlist 路径和 API 包兼容别名；根因：拆分与 DI 迁移后遗留旧入口；处理：删除重复声明，错误返回上移，拆分职责文件，移除兼容别名和常量转发；验证：编译、静态扫描、panic allowlist 测试和 OpenSpec 校验通过。
 - [x] 反馈`FB-53`~`FB-55`：API 响应暴露实体、源码插件 DTO 命名和聚合测试归属；根因：响应合同受数据库实体驱动且插件测试 ownership 不闭环；处理：独立响应 DTO、逐字段映射、插件 API DTO 重命名、测试迁回各插件目录；验证：API 静态验证、插件测试和审查通过。
-- [x] 验证：历史实现运行过`make init`、`make dao`、`make ctrl`、Go 单元测试、E2E、前端适配验证、静态扫描、OpenSpec 校验和`lina-review`；本次压缩仅需 OpenSpec 严格校验、重复能力扫描和 Markdown 空白检查。
+- [x] 验证：历史实现运行过`make db.init`、`make dao`、`make ctrl`、Go 单元测试、E2E、前端适配验证、静态扫描、OpenSpec 校验和`lina-review`；本次压缩仅需 OpenSpec 严格校验、重复能力扫描和 Markdown 空白检查。
 - [x] 治理：本归档压缩不修改运行时代码、HTTP API、数据库、缓存、数据权限、前端 UI、插件源码、运行时文案、语言包、`manifest/i18n`、`apidoc i18n JSON`、开发工具入口或生产构建；`i18n`影响仅限中文 OpenSpec 历史文档。
