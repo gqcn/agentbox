@@ -162,7 +162,7 @@ fi
 
 write_cluster_config
 
-make -C "$ROOT_DIR" init confirm=init rebuild=true
+make -C "$ROOT_DIR" db.init confirm=init rebuild=true
 make -C "$CORE_DIR" pack.assets
 (
   cd "$CORE_DIR"

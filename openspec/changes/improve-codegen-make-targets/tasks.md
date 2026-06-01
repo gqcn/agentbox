@@ -10,6 +10,7 @@
 
 - [x] **FB-1**: `make dao`和`make ctrl`只能在宿主或插件后端目录下正确生成
 - [x] **FB-2**: 插件根目录`Makefile`硬编码插件后端路径
+- [x] **FB-3**: Redis cluster smoke 脚本仍调用已移除的`make init`目标
 
 ### FB-1 处理记录
 
@@ -42,3 +43,18 @@
 - 修复：新增根目录共享片段`hack/makefiles/plugin.codegen.mk`，统一维护插件`ctrl`和`dao`目标；所有官方插件根目录`Makefile`改为计算自身`PLUGIN_ROOT`和`REPO_ROOT`后 include 共享片段；`apps/lina-plugins/README.md`、`apps/lina-plugins/README.zh-CN.md`和增量规范同步记录共享片段约束。
 - 验证：`make -n -C apps/lina-plugins/linapro-content-notice ctrl`、`make -n -C apps/lina-plugins/linapro-content-notice dao`、`make -n -C apps/lina-plugins/linapro-demo-dynamic ctrl`和`make -n -f apps/lina-plugins/linapro-content-notice/Makefile ctrl`均输出预期`linactl`转发命令；所有官方插件根目录`ctrl`和`dao` dry-run 循环通过；`rg -n 'apps/lina-plugins/.*/backend' apps/lina-plugins -g Makefile`无命中；`rg -n 'dir=.*linapro-|linapro-[a-z0-9-]+/backend|go run ../../../hack/tools/linactl' apps/lina-plugins -g Makefile`无命中；所有官方插件根目录`Makefile`共享 include 检查通过；`openspec validate improve-codegen-make-targets --strict`通过；`git diff --check`和`git -C apps/lina-plugins diff --check`通过。
 - 审查记录：已按命中规则做反馈级自查，未发现阻塞问题。本次为治理类开发工具反馈，不改变运行时行为，因此无需新增单元测试或 E2E；使用 Make dry-run、静态扫描、OpenSpec 严格校验和格式检查作为匹配治理验证。无新增运行期依赖、DI、缓存、数据权限、API、SQL、插件 host service 授权、前端 UI 或 i18n 资源变更。
+
+### FB-3 处理记录
+
+- 根因：`improve-codegen-make-targets`已将数据库初始化入口统一为根目录`make db.init`并通过`linactl db.init`执行，但`hack/tests/scripts/run-redis-cluster-smoke.sh`仍调用历史`make init confirm=init rebuild=true`。GitHub Actions 的`Redis cluster smoke`在 Ubuntu runner 上进入该脚本后，根`Makefile`没有`init`目标，因此立即报错`make: *** No rule to make target 'init'. Stop.`，尚未进入 Redis cluster 后端启动验证。
+- 影响分析：本反馈仅修正 Redis cluster smoke 测试辅助脚本的数据库初始化命令名称；不修改运行时服务、HTTP API、前端 UI、SQL 文件、数据模型、缓存实现、权限逻辑、插件源码或生产配置。
+- `i18n`影响：无运行时用户可见文案、菜单、路由、API 文档源文本、错误消息、插件清单、语言包或翻译缓存影响。
+- 缓存一致性影响：无缓存、快照、失效、刷新、预热、集群一致性或关键运行时状态实现影响；该脚本只是验证 Redis cluster 启动路径。
+- 数据权限影响：无业务数据读取、写入、列表、详情、导出、聚合统计、下载、授权关系或租户/组织边界影响；验证使用一次性测试数据库。
+- SQL 影响：不新增或修改 SQL 迁移、Seed DML、Mock 数据、插件安装/卸载 SQL、幂等逻辑或索引；仅继续调用既有`db.init`入口重建测试库。
+- 开发工具跨平台影响：命中`hack/tests/scripts/*.sh`和 CI smoke。该脚本是既有 GitHub Actions Linux smoke 入口，本次不新增平台专属入口；跨平台默认数据库初始化入口仍由`linactl db.init`、根`make db.init`和 Windows`make.cmd db.init`承载。验证使用脚本语法检查、Make dry-run、静态扫描和本机 Docker 完整 smoke。
+- 测试策略：本反馈是 CI 测试脚本治理修复，不改变用户可观察业务行为或端到端页面流程，因此不新增单元测试或 E2E；使用原失败脚本的完整 Redis cluster smoke 作为回归验证。
+- 已读取规则文件：`AGENTS.md`、`.agents/rules/openspec.md`、`.agents/rules/dev-tooling.md`、`.agents/rules/testing.md`、`.agents/rules/documentation.md`。
+- 修复：将`hack/tests/scripts/run-redis-cluster-smoke.sh`中的`make -C "$ROOT_DIR" init confirm=init rebuild=true`改为`make -C "$ROOT_DIR" db.init confirm=init rebuild=true`，保留原有确认和重建语义。
+- 验证：`bash -n hack/tests/scripts/run-redis-cluster-smoke.sh`通过；`make -n db.init confirm=init rebuild=true`输出预期`linactl db.init`转发命令；旧`make init`调用静态扫描无命中；使用独立 Docker PostgreSQL 和 Redis 容器运行`LINAPRO_REDIS_CLUSTER_SMOKE_PORT=18082 LINAPRO_REDIS_CLUSTER_SMOKE_DB_LINK='pgsql:postgres:postgres@tcp(127.0.0.1:15432)/linapro?sslmode=disable' LINAPRO_REDIS_CLUSTER_SMOKE_REDIS_ADDR='127.0.0.1:16379' ./hack/tests/scripts/run-redis-cluster-smoke.sh`通过；`openspec validate improve-codegen-make-targets --strict`通过；`git diff --check`通过。
+- 审查记录：已按命中规则做反馈级自查，未发现阻塞问题。无新增运行期依赖、DI、缓存实现、数据权限边界、API、SQL、插件 host service 授权、前端 UI 或 i18n 资源变更。
