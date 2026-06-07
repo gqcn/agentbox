@@ -196,6 +196,18 @@ func TestCommandRegistryUsesEnvironmentCommands(t *testing.T) {
 	}
 }
 
+// TestCommandRegistryUsesPluginsCheck verifies plugin governance uses the
+// generic plugins.check entrypoint.
+func TestCommandRegistryUsesPluginsCheck(t *testing.T) {
+	registry := commandRegistry()
+	if _, ok := registry["plugins.check"]; !ok {
+		t.Fatalf("expected command %q to be registered", "plugins.check")
+	}
+	if _, ok := registry["plugins.boundary.check"]; ok {
+		t.Fatalf("legacy command %q should not be registered", "plugins.boundary.check")
+	}
+}
+
 // TestPrintHelpHidesInternalCommands verifies root make help lists only
 // repository-level commands by default.
 func TestPrintHelpHidesInternalCommands(t *testing.T) {
@@ -1081,6 +1093,9 @@ func TestRunDevRejectsOccupiedPort(t *testing.T) {
 	application.portInUse = func(port int) bool {
 		return port == defaultBackendPort
 	}
+	application.processList = func() ([]process.Info, error) {
+		return nil, nil
+	}
 
 	err := runDev(context.Background(), application, commandInput{Params: map[string]string{"skip_wasm": "true"}})
 	if err == nil {
@@ -1220,6 +1235,9 @@ func TestRunDevOnlyWaitsForStoppedManagedPorts(t *testing.T) {
 			return false
 		}
 	}
+	application.processList = func() ([]process.Info, error) {
+		return nil, nil
+	}
 
 	err := runDev(context.Background(), application, commandInput{Params: map[string]string{"skip_wasm": "true"}})
 	if err == nil {
@@ -1228,11 +1246,75 @@ func TestRunDevOnlyWaitsForStoppedManagedPorts(t *testing.T) {
 	if !strings.Contains(err.Error(), "frontend port") || !strings.Contains(err.Error(), "already in use") {
 		t.Fatalf("expected frontend port-in-use error, got: %v", err)
 	}
-	if frontendProbes != 1 {
-		t.Fatalf("expected frontend port to be checked only by final availability validation, got %d probes", frontendProbes)
+	if frontendProbes != 2 {
+		t.Fatalf("expected frontend port to be checked by project-occupant cleanup and final validation, got %d probes", frontendProbes)
 	}
 	if backendProbes < 2 {
 		t.Fatalf("expected backend port to be checked by release wait and final validation, got %d probes", backendProbes)
+	}
+}
+
+func TestRunDevStopsCurrentProjectFrontendPortOccupant(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "go.work"), "go 1.25.0\n")
+	writeFile(t, filepath.Join(root, "apps", "lina-core", "manifest", "config", "config.template.yaml"), "template: true\n")
+	writeFile(t, filepath.Join(root, "apps", "lina-core", "manifest", "config", "config.yaml"), "server:\n  address: \":9120\"\n")
+	writeFile(t, filepath.Join(root, "apps", "lina-vben", "apps", "web-antd", "vite.config.mts"), "proxy: { '/api': { target: 'http://localhost:9120' } }\n")
+	writeFile(t, filepath.Join(root, "apps", "lina-core", "manifest", "config", "metadata.yaml"), "metadata: true\n")
+	writeFile(t, filepath.Join(root, "apps", "lina-core", "manifest", "sql", "001.sql"), "select 1;\n")
+	writeFile(t, filepath.Join(root, "apps", "lina-core", "manifest", "i18n", "en-US", "framework.json"), "{}\n")
+	if err := os.MkdirAll(filepath.Join(root, "apps", "lina-vben", "apps", "web-antd"), 0o755); err != nil {
+		t.Fatalf("mkdir frontend workdir: %v", err)
+	}
+	writeFrontendDependencySentinel(t, root)
+
+	var stdout bytes.Buffer
+	application := newApp(&stdout, ioDiscard{}, strings.NewReader(""))
+	application.root = root
+	application.execCommand = func(_ context.Context, _ string, _ ...string) *exec.Cmd {
+		return exec.Command("true")
+	}
+	application.waitHTTP = func(_ string, _ string, pidPath string, _ string, _ time.Duration) error {
+		if devservice.ReadPID(pidPath) == 0 {
+			return os.ErrNotExist
+		}
+		return nil
+	}
+
+	frontendOccupied := true
+	application.portInUse = func(port int) bool {
+		return port == defaultFrontendPort && frontendOccupied
+	}
+	application.processList = func() ([]process.Info, error) {
+		return []process.Info{
+			{
+				PID: 43210,
+				Args: []string{
+					"node",
+					filepath.Join(root, "apps", "lina-vben", "node_modules", ".bin", "..", "vite", "bin", "vite.js"),
+					"--mode",
+					"development",
+				},
+				CWD: filepath.Join(root, "apps", "lina-vben", "apps", "web-antd"),
+			},
+		}, nil
+	}
+
+	killedPID := 0
+	application.processKill = func(pid int) error {
+		killedPID = pid
+		frontendOccupied = false
+		return nil
+	}
+
+	if err := runDev(context.Background(), application, commandInput{Params: map[string]string{"skip_wasm": "true"}}); err != nil {
+		t.Fatalf("runDev should stop current-project frontend occupant, got: %v", err)
+	}
+	if killedPID != 43210 {
+		t.Fatalf("expected current-project frontend process to be stopped, got pid %d", killedPID)
+	}
+	if !strings.Contains(stdout.String(), "Frontend port 5666 is occupied by current project process 43210; stopped it") {
+		t.Fatalf("expected cleanup message, got: %s", stdout.String())
 	}
 }
 
@@ -1934,8 +2016,7 @@ func TestPluginCommandSmokeFixtureIncludesLinactlLocalReplaceDeps(t *testing.T) 
 	for _, expected := range []string{
 		`cp apps/lina-core/go.mod "$smoke_root/apps/lina-core/go.mod"`,
 		`cp apps/lina-core/go.sum "$smoke_root/apps/lina-core/go.sum"`,
-		`cp -R apps/lina-core/pkg/plugin/pluginbridge "$smoke_root/apps/lina-core/pkg/plugin/pluginbridge"`,
-		`cp -R apps/lina-core/pkg/plugin/capability/data "$smoke_root/apps/lina-core/pkg/plugin/capability/data"`,
+		`cp -R apps/lina-core/pkg "$smoke_root/apps/lina-core/pkg"`,
 		`./apps/lina-core`,
 	} {
 		if !strings.Contains(text, expected) {
@@ -1960,8 +2041,7 @@ func TestMakeCommandSmokeDevFixtureIncludesLinactlLocalReplaceDeps(t *testing.T)
 	for _, expected := range []string{
 		`cp apps/lina-core/go.mod "$smoke_root/apps/lina-core/go.mod"`,
 		`cp apps/lina-core/go.sum "$smoke_root/apps/lina-core/go.sum"`,
-		`cp -R apps/lina-core/pkg/plugin/pluginbridge "$smoke_root/apps/lina-core/pkg/plugin/pluginbridge"`,
-		`cp -R apps/lina-core/pkg/plugin/capability/data "$smoke_root/apps/lina-core/pkg/plugin/capability/data"`,
+		`cp -R apps/lina-core/pkg "$smoke_root/apps/lina-core/pkg"`,
 		`./apps/lina-core`,
 	} {
 		if !strings.Contains(text, expected) {
@@ -1970,6 +2050,28 @@ func TestMakeCommandSmokeDevFixtureIncludesLinactlLocalReplaceDeps(t *testing.T)
 	}
 	if strings.Contains(text, "module smoke-core") {
 		t.Fatalf("make command smoke workflow must preserve the lina-core module path for linactl local replace")
+	}
+}
+
+// TestReusableSmokeWorkflowsDoNotCopyRemovedPluginCapabilityData guards the
+// isolated CI smoke fixtures after plugin capability packages are split by
+// domain instead of living under the removed capability/data path.
+func TestReusableSmokeWorkflowsDoNotCopyRemovedPluginCapabilityData(t *testing.T) {
+	root, err := fileutil.DiscoverRepoRoot()
+	if err != nil {
+		t.Fatalf("discover repo root: %v", err)
+	}
+	for _, workflow := range []string{
+		filepath.Join(root, ".github", "workflows", "reusable-plugin-command-smoke.yml"),
+		filepath.Join(root, ".github", "workflows", "reusable-make-command-smoke.yml"),
+	} {
+		content, readErr := os.ReadFile(workflow)
+		if readErr != nil {
+			t.Fatalf("read workflow %s: %v", workflow, readErr)
+		}
+		if strings.Contains(string(content), "apps/lina-core/pkg/plugin/capability/data") {
+			t.Fatalf("workflow %s must not copy removed plugin capability/data package", workflow)
+		}
 	}
 }
 

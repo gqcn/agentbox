@@ -34,36 +34,9 @@ import (
 	"lina-core/internal/model/entity"
 
 	"lina-core/pkg/plugin/capability"
+	aitextsvc "lina-core/pkg/plugin/capability/aicap/aitext"
 	"lina-core/pkg/plugin/pluginhost"
 )
-
-// Topology defines the cluster semantics required by plugin runtime behavior.
-type Topology interface {
-	// IsEnabled reports whether the host is running in clustered mode.
-	IsEnabled() bool
-	// IsPrimary reports whether the current node is the primary node.
-	IsPrimary() bool
-	// NodeID returns the stable identifier of the current node.
-	NodeID() string
-}
-
-// singleNodeTopology provides the default topology used when clustering is disabled.
-type singleNodeTopology struct{}
-
-// IsEnabled reports false because the default topology is always single-node.
-func (singleNodeTopology) IsEnabled() bool {
-	return false
-}
-
-// IsPrimary reports true because the only node is also the primary node.
-func (singleNodeTopology) IsPrimary() bool {
-	return true
-}
-
-// NodeID returns the stable placeholder node identifier for single-node mode.
-func (singleNodeTopology) NodeID() string {
-	return "local-node"
-}
 
 type (
 	// SourceManifest aliases the framework plugin manifest model discovered
@@ -400,6 +373,8 @@ type LifecycleManagementService interface {
 	IsEnabled(ctx context.Context, pluginID string) bool
 	// IsProviderEnabled returns whether pluginID is platform-enabled for framework capability provider use.
 	IsProviderEnabled(ctx context.Context, pluginID string) bool
+	// AITextProviderEnv returns typed, plugin-scoped text AI provider construction inputs.
+	AITextProviderEnv(pluginID string) aitextsvc.ProviderEnv
 	// OrgProviderEnv returns typed, plugin-scoped organization-provider construction inputs.
 	OrgProviderEnv(pluginID string) orgcapsvc.ProviderEnv
 	// TenantProviderEnv returns typed, plugin-scoped tenant-provider construction inputs.
@@ -463,11 +438,11 @@ type RegistryQueryService interface {
 	// SyncAndList scans plugin manifests, synchronizes plugin registry rows, and
 	// returns the combined list of source and dynamic plugin items.
 	SyncAndList(ctx context.Context) (*ListOutput, error)
-	// List returns the read-only plugin list with optional in-memory filtering applied.
+	// List returns the paginated read-only plugin summary list with optional filtering applied.
 	List(ctx context.Context, in ListInput) (*ListOutput, error)
 	// Get returns one read-only plugin detail projection by exact plugin ID.
 	Get(ctx context.Context, pluginID string) (*PluginItem, error)
-	// PrewarmManagementList builds the complete plugin management list read model.
+	// PrewarmManagementList builds the plugin management summary list read model.
 	PrewarmManagementList(ctx context.Context) error
 	// PreviewRuntimeUpgrade returns a side-effect-free upgrade preview for one pending plugin.
 	PreviewRuntimeUpgrade(ctx context.Context, pluginID string) (*RuntimeUpgradePreview, error)
@@ -560,7 +535,7 @@ type serviceImpl struct {
 	runtimeCacheRevisionCtrl *runtimecache.Controller
 	// runtimeUpgradeLockStore coordinates explicit runtime upgrades across cluster nodes.
 	runtimeUpgradeLockStore coordination.LockStore
-	// managementListCache stores the complete plugin-management read model.
+	// managementListCache stores the plugin-management summary read model.
 	managementListCache *management.ListCache
 	// tenantStartup validates tenant-governance startup state through a narrow tenant capability.
 	tenantStartup pluginTenantStartupCapability
@@ -673,6 +648,9 @@ func New(
 	)
 	runtimeSvc.SetRuntimeCacheChangeNotifier(service)
 	runtimeSvc.SetDependencyValidator(service)
+	if err := runtimeSvc.ValidateRequiredDependencies(); err != nil {
+		return nil, gerror.Wrap(err, "plugin runtime wiring validation failed")
+	}
 	service.sourceUpgradeSvc = sourceupgradeinternal.New(catalogSvc, lifecycleSvc, runtimeSvc, integrationSvc, i18nSvc, service)
 	return service, nil
 }

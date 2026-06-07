@@ -21,6 +21,14 @@ const (
 	CapabilityConfig       = hostservice.CapabilityConfig
 	CapabilityHostConfig   = hostservice.CapabilityHostConfig
 	CapabilityManifest     = hostservice.CapabilityManifest
+	CapabilityAIText       = hostservice.CapabilityAIText
+	CapabilityAIImage      = hostservice.CapabilityAIImage
+	CapabilityAIEmbedding  = hostservice.CapabilityAIEmbedding
+	CapabilityAIAudio      = hostservice.CapabilityAIAudio
+	CapabilityAIVision     = hostservice.CapabilityAIVision
+	CapabilityAIDocument   = hostservice.CapabilityAIDocument
+	CapabilityAISafety     = hostservice.CapabilityAISafety
+	CapabilityAIVideo      = hostservice.CapabilityAIVideo
 	CapabilityOrg          = hostservice.CapabilityOrg
 	CapabilityTenant       = hostservice.CapabilityTenant
 
@@ -38,6 +46,7 @@ const (
 	HostServiceConfig     = hostservice.HostServiceConfig
 	HostServiceHostConfig = hostservice.HostServiceHostConfig
 	HostServiceManifest   = hostservice.HostServiceManifest
+	HostServiceAI         = hostservice.HostServiceAI
 	HostServiceOrg        = hostservice.HostServiceOrg
 	HostServiceTenant     = hostservice.HostServiceTenant
 
@@ -78,6 +87,21 @@ const (
 	HostServiceMethodConfigDuration             = hostservice.HostServiceMethodConfigDuration
 	HostServiceMethodHostConfigGet              = hostservice.HostServiceMethodHostConfigGet
 	HostServiceMethodManifestGet                = hostservice.HostServiceMethodManifestGet
+	HostServiceMethodAITextGenerate             = hostservice.HostServiceMethodAITextGenerate
+	HostServiceMethodAIImageGenerate            = hostservice.HostServiceMethodAIImageGenerate
+	HostServiceMethodAIImageEdit                = hostservice.HostServiceMethodAIImageEdit
+	HostServiceMethodAIEmbeddingCreate          = hostservice.HostServiceMethodAIEmbeddingCreate
+	HostServiceMethodAIAudioTranscribe          = hostservice.HostServiceMethodAIAudioTranscribe
+	HostServiceMethodAIAudioSynthesize          = hostservice.HostServiceMethodAIAudioSynthesize
+	HostServiceMethodAIVisionAnalyze            = hostservice.HostServiceMethodAIVisionAnalyze
+	HostServiceMethodAIDocumentAnalyze          = hostservice.HostServiceMethodAIDocumentAnalyze
+	HostServiceMethodAIDocumentCite             = hostservice.HostServiceMethodAIDocumentCite
+	HostServiceMethodAISafetyModerate           = hostservice.HostServiceMethodAISafetyModerate
+	HostServiceMethodAIVideoGenerate            = hostservice.HostServiceMethodAIVideoGenerate
+	HostServiceMethodAIVideoEdit                = hostservice.HostServiceMethodAIVideoEdit
+	HostServiceMethodAIVideoExtend              = hostservice.HostServiceMethodAIVideoExtend
+	HostServiceMethodAIVideoOperationGet        = hostservice.HostServiceMethodAIVideoOperationGet
+	HostServiceMethodAIVideoOperationCancel     = hostservice.HostServiceMethodAIVideoOperationCancel
 	HostServiceMethodOrgAvailable               = hostservice.HostServiceMethodOrgAvailable
 	HostServiceMethodOrgStatus                  = hostservice.HostServiceMethodOrgStatus
 	HostServiceMethodOrgListUserDeptAssignments = hostservice.HostServiceMethodOrgListUserDeptAssignments
@@ -105,8 +129,11 @@ var (
 	CapabilitiesFromHostServices           = hostservice.CapabilitiesFromHostServices
 	CapabilityMapFromHostServices          = hostservice.CapabilityMapFromHostServices
 	ValidateHostServiceSpecs               = hostservice.ValidateHostServiceSpecs
+	ValidateHostServiceSpecsForPlugin      = hostservice.ValidateHostServiceSpecsForPlugin
 	NormalizeHostServiceSpecs              = hostservice.NormalizeHostServiceSpecs
+	NormalizeHostServiceSpecsForPlugin     = hostservice.NormalizeHostServiceSpecsForPlugin
 	MustNormalizeHostServiceSpecs          = hostservice.MustNormalizeHostServiceSpecs
+	MustNormalizeHostServiceSpecsForPlugin = hostservice.MustNormalizeHostServiceSpecsForPlugin
 	AllCapabilities                        = hostservice.AllCapabilities
 	ValidateCapabilities                   = hostservice.ValidateCapabilities
 	NormalizeCapabilities                  = hostservice.NormalizeCapabilities

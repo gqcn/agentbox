@@ -19,6 +19,7 @@ const apiBaseURL = config.apiBaseURL;
 const successPluginID = "plugin-dev-host-services-e2e";
 const deniedPluginID = "plugin-dev-host-services-denied-e2e";
 const rawSQLPluginID = "plugin-dev-host-services-raw-sql-e2e";
+const successDataTable = "plugin_plugin_dev_host_services_e2e_record";
 
 type PluginListItem = {
   id: string;
@@ -250,6 +251,27 @@ function ensurePluginStateTable() {
   ]);
 }
 
+function ensureSuccessDataTable() {
+  execPgSQLStatements([
+    `DROP TABLE IF EXISTS ${successDataTable};`,
+    [
+      `CREATE TABLE ${successDataTable} (`,
+      "  id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,",
+      "  plugin_id VARCHAR(64) NOT NULL DEFAULT '',",
+      "  release_id INTEGER NOT NULL DEFAULT 0,",
+      "  node_key VARCHAR(255) NOT NULL DEFAULT '',",
+      "  desired_state VARCHAR(64) NOT NULL DEFAULT '',",
+      "  current_state VARCHAR(64) NOT NULL DEFAULT '',",
+      "  generation INTEGER NOT NULL DEFAULT 0,",
+      "  error_message TEXT NOT NULL DEFAULT '',",
+      "  created_at TIMESTAMP,",
+      "  updated_at TIMESTAMP,",
+      "  deleted_at TIMESTAMP",
+      ");",
+    ].join(" "),
+  ]);
+}
+
 function cleanupPluginRows(pluginIDs: string[]) {
   const statements: string[] = [];
   for (const pluginID of pluginIDs) {
@@ -266,6 +288,14 @@ function cleanupPluginRows(pluginIDs: string[]) {
     );
   }
   execPgSQLStatements(statements);
+}
+
+function cleanupSuccessDataTable() {
+  execPgSQLStatements([`DELETE FROM ${successDataTable};`]);
+}
+
+function dropSuccessDataTable() {
+  execPgSQLStatements([`DROP TABLE IF EXISTS ${successDataTable};`]);
 }
 
 function cleanupArtifacts(pluginIDs: string[]) {
@@ -452,7 +482,7 @@ hostServices:
       - transaction
     resources:
       tables:
-        - sys_plugin_node_state
+        - ${successDataTable}
 `,
   );
   writeTestFile(
@@ -487,22 +517,22 @@ import (
 
 	"github.com/gogf/gf/v2/errors/gerror"
 
-	plugindata "lina-core/pkg/plugin/capability/data"
-	capabilityguest "lina-core/pkg/plugin/capability/guest"
+	"lina-core/pkg/plugin/capability/recordstore"
+	bridgeguest "lina-core/pkg/plugin/pluginbridge/guest"
 	"lina-core/pkg/plugin/pluginbridge/protocol"
 )
 
 const (
 	networkURL = "${upstreamBaseURL}"
-	dataTable  = "sys_plugin_node_state"
+	dataTable  = "${successDataTable}"
 )
 
 func (c *Controller) HostServices(request *protocol.BridgeRequestEnvelopeV1) (*protocol.BridgeResponseEnvelopeV1, error) {
 	var (
-		runtimeSvc = capabilityguest.Runtime()
-		storageSvc = capabilityguest.Storage()
-		httpSvc    = capabilityguest.Network()
-		dataSvc    = plugindata.Open()
+		runtimeSvc = bridgeguest.Runtime()
+		storageSvc = bridgeguest.Storage()
+		httpSvc    = bridgeguest.Network()
+		dataSvc    = bridgeguest.Default().RecordStore()
 	)
 
 	nowValue, err := runtimeSvc.Now()
@@ -589,7 +619,7 @@ func (c *Controller) HostServices(request *protocol.BridgeRequestEnvelopeV1) (*p
 		return nil, err
 	}
 
-	err = dataSvc.Transaction(func(tx *plugindata.Tx) error {
+	err = dataSvc.Transaction(func(tx *recordstore.Tx) error {
 		_, txErr := tx.Table(dataTable).Insert(map[string]any{
 			"pluginId": request.PluginID,
 			"releaseId": 0,
@@ -775,13 +805,12 @@ func New() *Controller {
     `package dynamic
 
 import (
-	plugindata "lina-core/pkg/plugin/capability/data"
-	capabilityguest "lina-core/pkg/plugin/capability/guest"
+	bridgeguest "lina-core/pkg/plugin/pluginbridge/guest"
 	"lina-core/pkg/plugin/pluginbridge/protocol"
 )
 
 func (c *Controller) DeniedMethod(request *protocol.BridgeRequestEnvelopeV1) (*protocol.BridgeResponseEnvelopeV1, error) {
-	_, _, _, err := capabilityguest.Storage().Get("authorized-files/blocked.txt")
+	_, _, _, err := bridgeguest.Storage().Get("authorized-files/blocked.txt")
 	if err != nil {
 		return nil, err
 	}
@@ -789,7 +818,7 @@ func (c *Controller) DeniedMethod(request *protocol.BridgeRequestEnvelopeV1) (*p
 }
 
 func (c *Controller) DeniedResource(request *protocol.BridgeRequestEnvelopeV1) (*protocol.BridgeResponseEnvelopeV1, error) {
-	_, err := capabilityguest.Storage().PutText("denied-files/blocked.txt", "blocked", "text/plain", true)
+	_, err := bridgeguest.Storage().PutText("denied-files/blocked.txt", "blocked", "text/plain", true)
 	if err != nil {
 		return nil, err
 	}
@@ -797,7 +826,7 @@ func (c *Controller) DeniedResource(request *protocol.BridgeRequestEnvelopeV1) (
 }
 
 func (c *Controller) DeniedService(request *protocol.BridgeRequestEnvelopeV1) (*protocol.BridgeResponseEnvelopeV1, error) {
-	_, _, err := plugindata.Open().Table("sys_plugin_node_state").Page(1, 1).All()
+	_, _, err := bridgeguest.Default().RecordStore().Table("sys_plugin_node_state").Page(1, 1).All()
 	if err != nil {
 		return nil, err
 	}
@@ -986,6 +1015,7 @@ test.describe("TC-4 Runtime Wasm Host Services", () => {
     mkdirSync(sourceRoot(), { recursive: true });
     mkdirSync(buildOutputDir(), { recursive: true });
     ensurePluginStateTable();
+    ensureSuccessDataTable();
 
     const upstream = await startUpstreamServer();
     upstreamServer = upstream.server;
@@ -1020,6 +1050,7 @@ test.describe("TC-4 Runtime Wasm Host Services", () => {
       });
     }
     cleanupPluginRows([successPluginID, deniedPluginID, rawSQLPluginID]);
+    dropSuccessDataTable();
     cleanupArtifacts([successPluginID, deniedPluginID, rawSQLPluginID]);
     rmSync(tempRoot(), { force: true, recursive: true });
   });
@@ -1028,6 +1059,7 @@ test.describe("TC-4 Runtime Wasm Host Services", () => {
     await resetPlugin(adminApi!, successPluginID);
     await resetPlugin(adminApi!, deniedPluginID);
     cleanupPluginRows([successPluginID, deniedPluginID, rawSQLPluginID]);
+    cleanupSuccessDataTable();
     cleanupArtifacts([successPluginID, deniedPluginID, rawSQLPluginID]);
   });
 
@@ -1035,6 +1067,7 @@ test.describe("TC-4 Runtime Wasm Host Services", () => {
     await resetPlugin(adminApi!, successPluginID);
     await resetPlugin(adminApi!, deniedPluginID);
     cleanupPluginRows([successPluginID, deniedPluginID, rawSQLPluginID]);
+    cleanupSuccessDataTable();
     cleanupArtifacts([successPluginID, deniedPluginID, rawSQLPluginID]);
   });
 

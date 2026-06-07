@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
 
 	"github.com/gogf/gf/v2/os/gctx"
@@ -18,34 +17,23 @@ import (
 	"lina-core/internal/model/entity"
 	i18nsvc "lina-core/internal/service/i18n"
 	"lina-core/internal/service/plugin/internal/catalog"
+	"lina-core/internal/service/plugin/internal/management"
 	"lina-core/internal/service/plugin/internal/testutil"
 	"lina-core/pkg/bizerr"
-	"lina-core/pkg/dialect"
 	"lina-core/pkg/plugin/pluginbridge/protocol"
 )
 
-// TestNormalizeDataTableNamesTrimsAndDeduplicates verifies metadata lookups
-// query each non-empty table name at most once.
-func TestNormalizeDataTableNamesTrimsAndDeduplicates(t *testing.T) {
-	got := normalizeDataTableNames([]string{" sys_plugin ", "", "sys_user", "sys_plugin", "  "})
-	want := []string{"sys_plugin", "sys_user"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("expected normalized table names %v, got %v", want, got)
+// findPluginItem returns one plugin list item by plugin ID for list assertions.
+func findPluginItem(out *ListOutput, pluginID string) *PluginItem {
+	if out == nil {
+		return nil
 	}
-}
-
-// TestDataTableCommentsFromMetadataMapsNonBlankComments verifies dialect
-// metadata results are converted into the governance display map.
-func TestDataTableCommentsFromMetadataMapsNonBlankComments(t *testing.T) {
-	got := dataTableCommentsFromMetadata([]dialect.TableMeta{
-		{TableName: " sys_plugin ", TableComment: " Plugin registry "},
-		{TableName: "sys_user", TableComment: ""},
-		{TableName: "", TableComment: "ignored"},
-	})
-	want := map[string]string{"sys_plugin": "Plugin registry"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("expected metadata comments %v, got %v", want, got)
+	for _, current := range out.List {
+		if current != nil && current.Id == pluginID {
+			return current
+		}
 	}
+	return nil
 }
 
 // TestSyncAndListRetainsMissingRuntimeRegistryAndReconcilesState verifies that
@@ -240,6 +228,188 @@ func TestListProjectsMissingRuntimeRegistryWithoutWriting(t *testing.T) {
 	}
 }
 
+// TestNormalizePluginListPageBounds verifies plugin management list pagination
+// applies stable defaults and the service-side maximum page size.
+func TestNormalizePluginListPageBounds(t *testing.T) {
+	pageNum, pageSize := management.NormalizeListPage(0, 0)
+	if pageNum != management.DefaultListPageNum || pageSize != management.DefaultListPageSize {
+		t.Fatalf("expected default page %d/%d, got %d/%d", management.DefaultListPageNum, management.DefaultListPageSize, pageNum, pageSize)
+	}
+
+	pageNum, pageSize = management.NormalizeListPage(2, management.MaxListPageSize+1)
+	if pageNum != 2 || pageSize != management.MaxListPageSize {
+		t.Fatalf("expected bounded page 2/%d, got %d/%d", management.MaxListPageSize, pageNum, pageSize)
+	}
+}
+
+// TestListPaginatesAndKeepsGovernanceDetailsOutOfSummary verifies the GET-list
+// path is a paginated summary while exact detail lookup still exposes governance
+// review payloads for the selected plugin only.
+func TestListPaginatesAndKeepsGovernanceDetailsOutOfSummary(t *testing.T) {
+	var (
+		service       = newTestService()
+		ctx           = context.Background()
+		filterPrefix  = "plugin-dev-summary-page-"
+		firstPluginID = filterPrefix + "a"
+		secondID      = filterPrefix + "b"
+		detailID      = "plugin-dev-dynamic-summary-detail"
+		version       = "v0.1.0"
+	)
+
+	createTestSourceDependencyPlugin(t, firstPluginID, "Summary Page A", version, "")
+	createTestSourceDependencyPlugin(t, secondID, "Summary Page B", version, "")
+	cleanupTestPluginIDs(t, context.Background(), firstPluginID, secondID, detailID)
+
+	out, err := service.List(ctx, ListInput{
+		PageNum:  2,
+		PageSize: 1,
+		ID:       filterPrefix,
+	})
+	if err != nil {
+		t.Fatalf("expected paginated summary list to succeed, got error: %v", err)
+	}
+	if out.Total != 2 || len(out.List) != 1 {
+		t.Fatalf("expected second page of two filtered plugins, got total=%d len=%d", out.Total, len(out.List))
+	}
+	if out.List[0] == nil || out.List[0].Id != secondID {
+		t.Fatalf("expected second plugin on page 2, got %#v", out.List)
+	}
+	emptyPage, err := service.List(ctx, ListInput{
+		PageNum:  3,
+		PageSize: 1,
+		ID:       filterPrefix,
+	})
+	if err != nil {
+		t.Fatalf("expected empty page summary list to succeed, got error: %v", err)
+	}
+	if emptyPage.Total != 2 || len(emptyPage.List) != 0 {
+		t.Fatalf("expected empty page with retained total=2, got total=%d len=%d", emptyPage.Total, len(emptyPage.List))
+	}
+
+	artifactPath := filepath.Join(testutil.TestDynamicStorageDir(), detailID+".wasm")
+	t.Cleanup(func() {
+		if err := os.Remove(artifactPath); err != nil && !os.IsNotExist(err) {
+			t.Fatalf("failed to remove dynamic summary artifact %s: %v", artifactPath, err)
+		}
+	})
+	testutil.WriteRuntimeWasmArtifact(
+		t,
+		artifactPath,
+		&catalog.ArtifactManifest{
+			ID:                  detailID,
+			Name:                "Dynamic Summary Detail Plugin",
+			Version:             version,
+			Type:                catalog.TypeDynamic.String(),
+			ScopeNature:         catalog.ScopeNatureTenantAware.String(),
+			SupportsMultiTenant: &testutil.DefaultTestSupportsMultiTenant,
+			DefaultInstallMode:  catalog.InstallModeTenantScoped.String(),
+		},
+		&catalog.ArtifactSpec{
+			RuntimeKind: protocol.RuntimeKindWasm,
+			ABIVersion:  protocol.SupportedABIVersion,
+			HostServices: []*protocol.HostServiceSpec{
+				{
+					Service: protocol.HostServiceStorage,
+					Methods: []string{
+						protocol.HostServiceMethodStorageGet,
+					},
+					Paths: []string{"reports/"},
+				},
+			},
+			RouteCount: 1,
+		},
+		nil,
+		nil,
+		nil,
+		nil,
+		[]*protocol.RouteContract{
+			{
+				Path:        "/governed-report",
+				Method:      "GET",
+				Access:      protocol.AccessPublic,
+				RequestType: "DynamicSummaryDetailReq",
+			},
+		},
+		&protocol.BridgeSpec{
+			ABIVersion:     protocol.ABIVersionV1,
+			RuntimeKind:    protocol.RuntimeKindWasm,
+			RouteExecution: true,
+			RequestCodec:   protocol.CodecProtobuf,
+			ResponseCodec:  protocol.CodecProtobuf,
+			AllocExport:    protocol.DefaultGuestAllocExport,
+			ExecuteExport:  protocol.DefaultGuestExecuteExport,
+		},
+	)
+	service.InvalidateManagementListCache(ctx, "dynamic_summary_artifact_created")
+
+	summary, err := service.List(ctx, ListInput{ID: detailID})
+	if err != nil {
+		t.Fatalf("expected summary list for dynamic plugin to succeed, got error: %v", err)
+	}
+	summaryItem := findPluginItem(summary, detailID)
+	if summaryItem == nil {
+		t.Fatalf("expected dynamic plugin summary item")
+	}
+	if !summaryItem.AuthorizationRequired {
+		t.Fatalf("expected summary to retain authorization-required status, got %#v", summaryItem)
+	}
+	if summaryItem.DependencyCheck != nil {
+		t.Fatalf("expected summary list not to attach dependency check, got %#v", summaryItem.DependencyCheck)
+	}
+	if len(summaryItem.RequestedHostServices) != 0 ||
+		len(summaryItem.AuthorizedHostServices) != 0 ||
+		len(summaryItem.DeclaredRoutes) != 0 {
+		t.Fatalf("expected summary list to omit detail governance payloads, got requested=%#v authorized=%#v routes=%#v", summaryItem.RequestedHostServices, summaryItem.AuthorizedHostServices, summaryItem.DeclaredRoutes)
+	}
+
+	detail, err := service.Get(ctx, detailID)
+	if err != nil {
+		t.Fatalf("expected plugin detail to succeed, got error: %v", err)
+	}
+	if detail.DependencyCheck == nil {
+		t.Fatalf("expected detail to attach dependency check")
+	}
+	if len(detail.RequestedHostServices) != 1 || detail.RequestedHostServices[0].Service != protocol.HostServiceStorage {
+		t.Fatalf("expected detail requested host service, got %#v", detail.RequestedHostServices)
+	}
+	if len(detail.DeclaredRoutes) != 1 || detail.DeclaredRoutes[0].Path != "/governed-report" {
+		t.Fatalf("expected detail declared route, got %#v", detail.DeclaredRoutes)
+	}
+
+	_, err = service.Install(ctx, detailID, InstallOptions{
+		Authorization: &HostServiceAuthorizationInput{
+			Services: []*HostServiceAuthorizationDecision{
+				{
+					Service: protocol.HostServiceStorage,
+					Methods: []string{
+						protocol.HostServiceMethodStorageGet,
+					},
+					Paths: []string{"reports/"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected dynamic plugin install with authorization to succeed, got error: %v", err)
+	}
+	if err = os.Remove(artifactPath); err != nil && !os.IsNotExist(err) {
+		t.Fatalf("failed to remove staging artifact %s: %v", artifactPath, err)
+	}
+
+	installedDetail, err := service.Get(ctx, detailID)
+	if err != nil {
+		t.Fatalf("expected installed plugin detail to fall back to release snapshot, got error: %v", err)
+	}
+	if len(installedDetail.AuthorizedHostServices) != 1 ||
+		installedDetail.AuthorizedHostServices[0].Service != protocol.HostServiceStorage {
+		t.Fatalf("expected installed detail authorized snapshot, got %#v", installedDetail.AuthorizedHostServices)
+	}
+	if len(installedDetail.DeclaredRoutes) != 1 ||
+		installedDetail.DeclaredRoutes[0].Path != "/governed-report" {
+		t.Fatalf("expected installed detail declared route from release snapshot, got %#v", installedDetail.DeclaredRoutes)
+	}
+}
+
 // TestGetReturnsStableNotFoundBizerr verifies exact detail lookup reports a
 // stable business error when no discovered or registered plugin matches.
 func TestGetReturnsStableNotFoundBizerr(t *testing.T) {
@@ -355,204 +525,6 @@ func TestListMarksInstalledDynamicPluginWithHigherArtifactPendingUpgrade(t *test
 	}
 	if !detail.UpgradeAvailable {
 		t.Fatalf("expected detail to report upgradeAvailable, got %#v", detail)
-	}
-}
-
-// TestPreviewRuntimeUpgradeReturnsPendingDynamicPlan verifies that preview is
-// read-only and exposes manifest snapshots, dependency checks, SQL summary,
-// hostServices drift, and stable risk hints for a pending dynamic upgrade.
-func TestPreviewRuntimeUpgradeReturnsPendingDynamicPlan(t *testing.T) {
-	var (
-		service    = newTestService()
-		ctx        = context.Background()
-		pluginID   = "plugin-dev-dynamic-runtime-upgrade-preview"
-		oldVersion = "v0.1.0"
-		newVersion = "v0.2.0"
-	)
-
-	artifactPath := filepath.Join(testutil.TestDynamicStorageDir(), pluginID+".wasm")
-	testutil.CleanupPluginGovernanceRowsHard(t, ctx, pluginID)
-	t.Cleanup(func() {
-		testutil.CleanupPluginGovernanceRowsHard(t, ctx, pluginID)
-		if cleanupErr := os.Remove(artifactPath); cleanupErr != nil && !os.IsNotExist(cleanupErr) {
-			t.Fatalf("failed to remove runtime upgrade preview artifact %s: %v", artifactPath, cleanupErr)
-		}
-	})
-
-	testutil.WriteRuntimeWasmArtifact(
-		t,
-		artifactPath,
-		&catalog.ArtifactManifest{
-			ID:      pluginID,
-			Name:    "Dynamic Runtime Upgrade Preview Plugin",
-			Version: oldVersion,
-			Type:    catalog.TypeDynamic.String(),
-		},
-		&catalog.ArtifactSpec{
-			RuntimeKind: protocol.RuntimeKindWasm,
-			ABIVersion:  protocol.SupportedABIVersion,
-			HostServices: []*protocol.HostServiceSpec{
-				{
-					Service: protocol.HostServiceStorage,
-					Methods: []string{protocol.HostServiceMethodStorageGet},
-					Paths:   []string{"reports/"},
-				},
-			},
-		},
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-	)
-	if _, err := service.Install(ctx, pluginID, InstallOptions{}); err != nil {
-		t.Fatalf("expected initial dynamic plugin install to succeed, got error: %v", err)
-	}
-
-	oldRelease, err := service.getPluginRelease(ctx, pluginID, oldVersion)
-	if err != nil {
-		t.Fatalf("expected old release lookup to succeed, got error: %v", err)
-	}
-	if oldRelease == nil {
-		t.Fatal("expected old release row")
-	}
-
-	testutil.WriteRuntimeWasmArtifact(
-		t,
-		artifactPath,
-		&catalog.ArtifactManifest{
-			ID:      pluginID,
-			Name:    "Dynamic Runtime Upgrade Preview Plugin",
-			Version: newVersion,
-			Type:    catalog.TypeDynamic.String(),
-		},
-		&catalog.ArtifactSpec{
-			RuntimeKind: protocol.RuntimeKindWasm,
-			ABIVersion:  protocol.SupportedABIVersion,
-			HostServices: []*protocol.HostServiceSpec{
-				{
-					Service: protocol.HostServiceStorage,
-					Methods: []string{
-						protocol.HostServiceMethodStorageGet,
-						protocol.HostServiceMethodStoragePut,
-					},
-					Paths: []string{"reports/", "exports/"},
-				},
-			},
-		},
-		nil,
-		[]*catalog.ArtifactSQLAsset{
-			{
-				Key:     "001-upgrade-preview.sql",
-				Content: "CREATE TABLE IF NOT EXISTS plugin_dynamic_runtime_upgrade_preview(id INTEGER);",
-			},
-		},
-		nil,
-		nil,
-		nil,
-		nil,
-	)
-	newManifest, err := service.loadRuntimePluginManifestFromArtifact(artifactPath)
-	if err != nil {
-		t.Fatalf("expected target dynamic artifact manifest to load, got error: %v", err)
-	}
-	if _, err = service.syncPluginManifest(ctx, newManifest); err != nil {
-		t.Fatalf("expected target manifest sync to succeed, got error: %v", err)
-	}
-
-	preview, err := service.PreviewRuntimeUpgrade(ctx, pluginID)
-	if err != nil {
-		t.Fatalf("expected runtime upgrade preview to succeed, got error: %v", err)
-	}
-	if preview.PluginID != pluginID || preview.RuntimeState != RuntimeUpgradeStatePendingUpgrade {
-		t.Fatalf("expected pending preview for %s, got %#v", pluginID, preview)
-	}
-	if preview.EffectiveVersion != oldVersion || preview.DiscoveredVersion != newVersion {
-		t.Fatalf("expected versions %s/%s, got %#v", oldVersion, newVersion, preview)
-	}
-	if preview.FromManifest == nil || preview.FromManifest.Version != oldVersion {
-		t.Fatalf("expected from manifest version %s, got %#v", oldVersion, preview.FromManifest)
-	}
-	if preview.ToManifest == nil || preview.ToManifest.Version != newVersion {
-		t.Fatalf("expected to manifest version %s, got %#v", newVersion, preview.ToManifest)
-	}
-	if preview.SQLSummary.InstallSQLCount != 1 || preview.SQLSummary.RuntimeSQLAssetCount != 1 {
-		t.Fatalf("expected target SQL summary to include one SQL asset, got %#v", preview.SQLSummary)
-	}
-	if !preview.HostServicesDiff.AuthorizationRequired || !preview.HostServicesDiff.AuthorizationChanged {
-		t.Fatalf("expected host service authorization to be required and changed, got %#v", preview.HostServicesDiff)
-	}
-	if len(preview.HostServicesDiff.Changed) != 1 {
-		t.Fatalf("expected one changed host service, got %#v", preview.HostServicesDiff)
-	}
-	change := preview.HostServicesDiff.Changed[0]
-	if change.Service != protocol.HostServiceStorage {
-		t.Fatalf("expected storage host service change, got %#v", change)
-	}
-	if len(change.FromPaths) != 1 || change.FromPaths[0] != "reports/" {
-		t.Fatalf("expected from paths to contain reports/, got %#v", change.FromPaths)
-	}
-	if len(change.ToPaths) != 2 || change.ToPaths[0] != "exports/" || change.ToPaths[1] != "reports/" {
-		t.Fatalf("expected target paths to contain exports/ and reports/, got %#v", change.ToPaths)
-	}
-	if preview.DependencyCheck == nil || preview.DependencyCheck.TargetID != pluginID {
-		t.Fatalf("expected dependency check for target plugin, got %#v", preview.DependencyCheck)
-	}
-	if !containsString(preview.RiskHints, RuntimeUpgradeRiskHintUpgradeSQLRequiresReview) {
-		t.Fatalf("expected SQL review risk hint, got %#v", preview.RiskHints)
-	}
-	if !containsString(preview.RiskHints, RuntimeUpgradeRiskHintHostServiceAuthorizationChanged) {
-		t.Fatalf("expected host service authorization risk hint, got %#v", preview.RiskHints)
-	}
-
-	registry, err := service.getPluginRegistry(ctx, pluginID)
-	if err != nil {
-		t.Fatalf("expected registry lookup after preview to succeed, got error: %v", err)
-	}
-	if registry == nil || registry.Version != oldVersion || registry.ReleaseId != oldRelease.Id {
-		t.Fatalf("expected preview not to switch effective release, got %#v", registry)
-	}
-}
-
-// TestPreviewRuntimeUpgradeRejectsNormalPlugin verifies preview does not turn a
-// non-pending plugin into an upgrade action.
-func TestPreviewRuntimeUpgradeRejectsNormalPlugin(t *testing.T) {
-	var (
-		service  = newTestService()
-		ctx      = context.Background()
-		pluginID = "plugin-dev-dynamic-runtime-upgrade-preview-normal"
-		version  = "v0.1.0"
-	)
-
-	artifactPath := testutil.CreateTestRuntimeStorageArtifact(
-		t,
-		pluginID,
-		"Dynamic Runtime Upgrade Preview Normal Plugin",
-		version,
-		nil,
-		nil,
-	)
-
-	testutil.CleanupPluginGovernanceRowsHard(t, ctx, pluginID)
-	t.Cleanup(func() {
-		testutil.CleanupPluginGovernanceRowsHard(t, ctx, pluginID)
-	})
-
-	manifest, err := service.loadRuntimePluginManifestFromArtifact(artifactPath)
-	if err != nil {
-		t.Fatalf("expected dynamic artifact manifest to load, got error: %v", err)
-	}
-	if _, err = service.syncPluginManifest(ctx, manifest); err != nil {
-		t.Fatalf("expected dynamic manifest sync to succeed, got error: %v", err)
-	}
-	if _, err = service.Install(ctx, pluginID, InstallOptions{}); err != nil {
-		t.Fatalf("expected dynamic plugin install to succeed, got error: %v", err)
-	}
-
-	_, err = service.PreviewRuntimeUpgrade(ctx, pluginID)
-	if !bizerr.Is(err, CodePluginRuntimeUpgradePreviewUnavailable) {
-		t.Fatalf("expected preview unavailable bizerr, got %v", err)
 	}
 }
 
@@ -954,29 +926,6 @@ func TestSyncAndListDoesNotRestoreUninstalledDynamicGovernanceProjection(t *test
 	if resourceCount != 0 {
 		t.Fatalf("expected sync-and-list not to recreate governance resource refs for uninstalled plugin, got count=%d", resourceCount)
 	}
-}
-
-// findPluginItem returns one plugin list item by plugin ID for list assertions.
-func findPluginItem(out *ListOutput, pluginID string) *PluginItem {
-	if out == nil {
-		return nil
-	}
-	for _, current := range out.List {
-		if current != nil && current.Id == pluginID {
-			return current
-		}
-	}
-	return nil
-}
-
-// containsString reports whether values contains target.
-func containsString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }
 
 // appendRuntimeI18NSectionForPluginListTest appends one runtime i18n custom

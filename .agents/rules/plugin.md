@@ -6,7 +6,47 @@
 
 源码插件和动态插件必须共享插件清单、生命周期资源、SQL、i18n、前端静态资源和后端业务开发结构约定。两类插件的差异仅体现在与宿主的对接方式、运行时加载方式和交付形态上：源码插件随宿主编译嵌入，动态插件通过 WASM artifact、`pluginbridge`和`hostServices`协议接入。禁止让动态插件绕过统一的`api`、`controller`、`service`分层开发结构，也禁止让动态插件绕过通用插件资源约定。
 
+## 文档同步要求
+
+主框架插件能力发生变更时，必须审查`apps/lina-core/pkg/plugin`目录下的README文档是否需要同步更新。
+
 ## 插件通用资源要求
+
+插件ID命名规范：`<author>-<domain>-<capability>` 
+- `<author>`: 插件的作者或组织名称，建议使用小写字母和数字的组合，长度不超过 20 字符。
+- `<domain>`: 插件所属的功能领域或业务域，建议使用小写字母和数字的组合，长度不超过 20 字符。
+- `<capability>`: 插件提供的具体能力或功能，建议使用小写字母和数字的组合，长度不超过 20 字符。
+- 插件 ID 必须唯一，且在整个 LinaPro 插件生态中保持稳定。插件 ID 会同时进入 URL path、动态资源路径、文件名、数据库键、菜单 key、权限字符串、`i18n` namespace、`apidoc` namespace 和宿主能力发现，因此必须严格遵守上述命名规范，避免使用特殊字符、空格或过长的名称，以确保插件能够正确识别和加载。
+
+插件目录结构规范：
+```text
+apps/lina-plugins/<plugin-id>/
+├── plugin.yaml
+├── plugin_embed.go
+├── backend/
+│   ├── api/                         # API DTO与路由契约
+│   ├── hack/
+│   │   └── config.yaml              # make dao等插件开发配置
+│   ├── internal/
+│   │   ├── controller/              # HTTP控制器
+│   │   ├── service/                 # 业务服务层
+│   │   ├── dao/                     # make dao生成
+│   │   └── model/                   # do/entity模型
+│   └── plugin.go                    # 插件注册入口
+├── frontend/
+│   ├── pages/                       # 插件页面
+│   └── slots/                       # 插槽页面，可选
+├── manifest/
+│   ├── config/
+│   │   ├── config.yaml              # 开发期默认配置
+│   │   └── config.example.yaml      # 配置模板，不作为运行时默认值
+│   ├── sql/                         # 安装与升级SQL
+│   │   ├── mock-data/               # 演示数据，可选
+│   │   └── uninstall/               # 卸载SQL
+│   └── i18n/                        # 插件语言包
+├── README.md
+└── README.zh-CN.md
+```
 
 源码插件和动态插件都必须遵守以下通用资源约定：
 
@@ -59,4 +99,3 @@
 - 动态插件源码目录应维护`main.go`作为 WASM guest 构建入口。
 - 动态插件的 controller和service 是 guest 内部开发分层，宿主不得把它们当作源码插件原生 controller和service 直接加载；宿主只能通过`pluginbridge`、WASM host call 或版本化 host service 协议与动态插件交互。
 - 动态插件涉及 Go guest 代码、WASM host service、host call 协议或插件桥接时，必须遵守`.agents/rules/backend-go.md`中关于动态插件 host service、WASM host service、错误处理和共享实例的要求。
-

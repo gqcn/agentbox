@@ -10,7 +10,7 @@ import (
 
 	"github.com/gogf/gf/v2/net/ghttp"
 
-	"lina-core/pkg/plugin/capability/contract"
+	"lina-core/pkg/plugin/capability/bizctxcap"
 	"lina-core/pkg/plugin/capability/tenantcap"
 	"lina-core/pkg/plugin/pluginhost"
 )
@@ -19,7 +19,7 @@ import (
 // declarations remain inert until their owning source plugin is platform-enabled.
 func TestSourceProviderAvailabilityFollowsEnabledSnapshot(t *testing.T) {
 	var (
-		ctx      = contract.WithCurrentContext(context.Background(), contract.CurrentContext{TenantID: 0, PlatformBypass: true})
+		ctx      = bizctxcap.WithCurrentContext(context.Background(), bizctxcap.CurrentContext{TenantID: 0, PlatformBypass: true})
 		pluginID = "plugin-dev-source-capability-revision"
 		service  = newTestServiceWithTopology(&testTopology{
 			enabled: true,
@@ -59,7 +59,7 @@ func TestSourceProviderAvailabilityFollowsEnabledSnapshot(t *testing.T) {
 	if _, err = service.Install(ctx, pluginID, InstallOptions{}); err != nil {
 		t.Fatalf("install source provider plugin failed: %v", err)
 	}
-	tenantSvc := tenantcap.New(service, nil)
+	tenantSvc := tenantcap.New(capabilityRevisionRuntime{service: service, pluginID: pluginID}, nil)
 	status := tenantSvc.Status(ctx)
 	if status.Available || status.ActiveProvider == pluginID {
 		t.Fatalf("expected installed-but-disabled provider unavailable, got %#v", status)
@@ -85,6 +85,27 @@ func TestSourceProviderAvailabilityFollowsEnabledSnapshot(t *testing.T) {
 // capabilityRevisionProvider is a no-op tenant provider used by the
 // lifecycle/runtime-revision integration test.
 type capabilityRevisionProvider struct{}
+
+// capabilityRevisionRuntime exposes only the provider plugin owned by this
+// test so shared linapro-tenant-core state from broader Go runs cannot affect
+// the provider activation assertions.
+type capabilityRevisionRuntime struct {
+	service  *serviceImpl
+	pluginID string
+}
+
+// IsProviderEnabled delegates enablement for the test provider and hides every
+// unrelated tenant provider registered in the process.
+func (r capabilityRevisionRuntime) IsProviderEnabled(ctx context.Context, pluginID string) bool {
+	return r.service != nil &&
+		pluginID == r.pluginID &&
+		r.service.IsProviderEnabled(ctx, pluginID)
+}
+
+// TenantProviderEnv returns the minimal environment required by the no-op test provider.
+func (capabilityRevisionRuntime) TenantProviderEnv(string) tenantcap.ProviderEnv {
+	return tenantcap.ProviderEnv{}
+}
 
 // ResolveTenant returns the platform tenant.
 func (capabilityRevisionProvider) ResolveTenant(

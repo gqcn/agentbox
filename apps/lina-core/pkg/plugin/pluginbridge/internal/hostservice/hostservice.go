@@ -35,6 +35,22 @@ const (
 	CapabilityHostConfig = "host:hostconfig"
 	// CapabilityManifest grants access to plugin-scoped manifest resources.
 	CapabilityManifest = "host:manifest"
+	// CapabilityAIText grants access to host-defined text AI capability services.
+	CapabilityAIText = "host:ai:text"
+	// CapabilityAIImage grants access to host-defined image AI capability services.
+	CapabilityAIImage = "host:ai:image"
+	// CapabilityAIEmbedding grants access to host-defined embedding AI capability services.
+	CapabilityAIEmbedding = "host:ai:embedding"
+	// CapabilityAIAudio grants access to host-defined audio AI capability services.
+	CapabilityAIAudio = "host:ai:audio"
+	// CapabilityAIVision grants access to host-defined vision AI capability services.
+	CapabilityAIVision = "host:ai:vision"
+	// CapabilityAIDocument grants access to host-defined document AI capability services.
+	CapabilityAIDocument = "host:ai:document"
+	// CapabilityAISafety grants access to host-defined safety AI capability services.
+	CapabilityAISafety = "host:ai:safety"
+	// CapabilityAIVideo grants access to host-defined video AI capability services.
+	CapabilityAIVideo = "host:ai:video"
 	// CapabilityOrg grants access to host-defined organization capability services.
 	CapabilityOrg = "host:org"
 	// CapabilityTenant grants access to host-defined tenant capability services.
@@ -72,6 +88,8 @@ const (
 	HostServiceHostConfig = "hostconfig"
 	// HostServiceManifest is the plugin-scoped manifest resource service identifier.
 	HostServiceManifest = "manifest"
+	// HostServiceAI is the AI capability host service identifier.
+	HostServiceAI = "ai"
 	// HostServiceOrg is the organization capability host service identifier.
 	HostServiceOrg = "org"
 	// HostServiceTenant is the tenant capability host service identifier.
@@ -207,19 +225,19 @@ const (
 // business DTOs are owned by capability/orgcap and adapted by guest clients.
 const (
 	// HostServiceMethodOrgAvailable reports whether organization capability is available.
-	HostServiceMethodOrgAvailable = "available"
+	HostServiceMethodOrgAvailable = "capability.available"
 	// HostServiceMethodOrgStatus reads organization capability status.
-	HostServiceMethodOrgStatus = "status"
+	HostServiceMethodOrgStatus = "capability.status"
 	// HostServiceMethodOrgListUserDeptAssignments lists user department assignments in batch.
-	HostServiceMethodOrgListUserDeptAssignments = "user_dept_assignments.list"
+	HostServiceMethodOrgListUserDeptAssignments = "users.dept_assignments.list"
 	// HostServiceMethodOrgGetUserDeptInfo reads one user's department identifier and name.
-	HostServiceMethodOrgGetUserDeptInfo = "user_dept_info.get"
+	HostServiceMethodOrgGetUserDeptInfo = "users.dept_info.get"
 	// HostServiceMethodOrgGetUserDeptName reads one user's department name.
-	HostServiceMethodOrgGetUserDeptName = "user_dept_name.get"
+	HostServiceMethodOrgGetUserDeptName = "users.dept_name.get"
 	// HostServiceMethodOrgGetUserDeptIDs reads one user's department identifiers.
-	HostServiceMethodOrgGetUserDeptIDs = "user_dept_ids.get"
+	HostServiceMethodOrgGetUserDeptIDs = "users.dept_ids.get"
 	// HostServiceMethodOrgGetUserPostIDs reads one user's post identifiers.
-	HostServiceMethodOrgGetUserPostIDs = "user_post_ids.get"
+	HostServiceMethodOrgGetUserPostIDs = "users.post_ids.get"
 )
 
 // Tenant host-service methods describe the ordinary tenant capability surface
@@ -227,21 +245,56 @@ const (
 // and lifecycle governance stay out of this protocol.
 const (
 	// HostServiceMethodTenantAvailable reports whether tenant capability is available.
-	HostServiceMethodTenantAvailable = "available"
+	HostServiceMethodTenantAvailable = "capability.available"
 	// HostServiceMethodTenantStatus reads tenant capability status.
-	HostServiceMethodTenantStatus = "status"
+	HostServiceMethodTenantStatus = "capability.status"
 	// HostServiceMethodTenantCurrent reads the current request tenant.
-	HostServiceMethodTenantCurrent = "current"
+	HostServiceMethodTenantCurrent = "tenants.current"
 	// HostServiceMethodTenantPlatformBypass reports whether tenant filtering may be bypassed.
-	HostServiceMethodTenantPlatformBypass = "platform_bypass"
+	HostServiceMethodTenantPlatformBypass = "tenants.platform_bypass"
 	// HostServiceMethodTenantEnsureVisible validates that the current user can access one tenant.
-	HostServiceMethodTenantEnsureVisible = "visible.ensure"
+	HostServiceMethodTenantEnsureVisible = "tenants.visible.ensure"
 	// HostServiceMethodTenantValidateUserInTenant validates one user's tenant membership.
-	HostServiceMethodTenantValidateUserInTenant = "user_in_tenant.validate"
+	HostServiceMethodTenantValidateUserInTenant = "users.tenant_membership.validate"
 	// HostServiceMethodTenantListUserTenants lists tenants visible to one user.
-	HostServiceMethodTenantListUserTenants = "user_tenants.list"
+	HostServiceMethodTenantListUserTenants = "users.tenants.list"
 	// HostServiceMethodTenantValidateSwitch validates one tenant switch target.
-	HostServiceMethodTenantValidateSwitch = "switch.validate"
+	HostServiceMethodTenantValidateSwitch = "tenants.switch.validate"
+)
+
+// AI host-service methods describe the governed typed AI capability surface
+// available to authorized dynamic plugins.
+const (
+	// HostServiceMethodAITextGenerate executes one governed text generation request.
+	HostServiceMethodAITextGenerate = "text.generate"
+	// HostServiceMethodAIImageGenerate executes one governed image generation request.
+	HostServiceMethodAIImageGenerate = "image.generate"
+	// HostServiceMethodAIImageEdit executes one governed image editing request.
+	HostServiceMethodAIImageEdit = "image.edit"
+	// HostServiceMethodAIEmbeddingCreate executes one governed embedding request.
+	HostServiceMethodAIEmbeddingCreate = "embedding.create"
+	// HostServiceMethodAIAudioTranscribe executes one governed audio transcription request.
+	HostServiceMethodAIAudioTranscribe = "audio.transcribe"
+	// HostServiceMethodAIAudioSynthesize executes one governed audio synthesis request.
+	HostServiceMethodAIAudioSynthesize = "audio.synthesize"
+	// HostServiceMethodAIVisionAnalyze executes one governed visual analysis request.
+	HostServiceMethodAIVisionAnalyze = "vision.analyze"
+	// HostServiceMethodAIDocumentAnalyze executes one governed document analysis request.
+	HostServiceMethodAIDocumentAnalyze = "document.analyze"
+	// HostServiceMethodAIDocumentCite executes one governed citation-aware document request.
+	HostServiceMethodAIDocumentCite = "document.cite"
+	// HostServiceMethodAISafetyModerate executes one governed safety moderation request.
+	HostServiceMethodAISafetyModerate = "safety.moderate"
+	// HostServiceMethodAIVideoGenerate executes one governed video generation request.
+	HostServiceMethodAIVideoGenerate = "video.generate"
+	// HostServiceMethodAIVideoEdit executes one governed video editing request.
+	HostServiceMethodAIVideoEdit = "video.edit"
+	// HostServiceMethodAIVideoExtend executes one governed video extension request.
+	HostServiceMethodAIVideoExtend = "video.extend"
+	// HostServiceMethodAIVideoOperationGet reads one governed provider operation.
+	HostServiceMethodAIVideoOperationGet = "video.operation.get"
+	// HostServiceMethodAIVideoOperationCancel cancels one governed provider operation.
+	HostServiceMethodAIVideoOperationCancel = "video.operation.cancel"
 )
 
 // Storage visibility constants describe the serving posture attached to plugin

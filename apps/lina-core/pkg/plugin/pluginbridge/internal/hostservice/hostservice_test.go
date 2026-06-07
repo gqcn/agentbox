@@ -390,6 +390,56 @@ func TestValidateHostServiceSpecsAcceptsDataTables(t *testing.T) {
 	}
 }
 
+// TestValidateHostServiceSpecsForPluginAcceptsOwnedDataTables verifies
+// production validation allows only data tables in the current plugin namespace.
+func TestValidateHostServiceSpecsForPluginAcceptsOwnedDataTables(t *testing.T) {
+	specs := []*HostServiceSpec{{
+		Service: HostServiceData,
+		Methods: []string{HostServiceMethodDataList, HostServiceMethodDataUpdate},
+		Tables: []string{
+			" plugin_linapro_demo_dynamic_record ",
+			"plugin_linapro_demo_dynamic",
+		},
+	}}
+
+	if err := ValidateHostServiceSpecsForPlugin("linapro-demo-dynamic", specs); err != nil {
+		t.Fatalf("expected plugin-owned data tables to validate, got %v", err)
+	}
+	if len(specs[0].Tables) != 2 || specs[0].Tables[0] != "plugin_linapro_demo_dynamic" || specs[0].Tables[1] != "plugin_linapro_demo_dynamic_record" {
+		t.Fatalf("expected normalized plugin-owned tables, got %#v", specs[0].Tables)
+	}
+}
+
+// TestValidateHostServiceSpecsForPluginRejectsCoreDataTables verifies dynamic
+// data service declarations cannot authorize host sys_* core tables.
+func TestValidateHostServiceSpecsForPluginRejectsCoreDataTables(t *testing.T) {
+	err := ValidateHostServiceSpecsForPlugin("linapro-demo-dynamic", []*HostServiceSpec{{
+		Service: HostServiceData,
+		Methods: []string{HostServiceMethodDataList},
+		Tables:  []string{"sys_plugin_node_state"},
+	}})
+	if err == nil {
+		t.Fatal("expected host core data table to be rejected")
+	}
+}
+
+// TestNormalizeHostServiceSpecsForPluginRejectsOtherPluginDataTables verifies
+// official capability plugin tables stay inaccessible through another plugin's
+// generic data host service authorization.
+func TestNormalizeHostServiceSpecsForPluginRejectsOtherPluginDataTables(t *testing.T) {
+	normalized, err := NormalizeHostServiceSpecsForPlugin("linapro-demo-dynamic", []*HostServiceSpec{{
+		Service: HostServiceData,
+		Methods: []string{HostServiceMethodDataList},
+		Tables:  []string{"plugin_linapro_org_dept"},
+	}})
+	if err == nil {
+		t.Fatal("expected other plugin data table to be rejected")
+	}
+	if len(normalized) != 0 {
+		t.Fatalf("expected rejected declaration to return no normalized entries, got %#v", normalized)
+	}
+}
+
 // TestValidateHostServiceSpecsRejectsDataResources verifies data services must
 // use table authorization instead of generic resources.
 func TestValidateHostServiceSpecsRejectsDataResources(t *testing.T) {
@@ -458,6 +508,122 @@ func TestValidateHostServiceSpecsAcceptsCacheLockNotifyResources(t *testing.T) {
 	}
 	if specs[2].Resources[0].Ref != "inbox" {
 		t.Fatalf("expected normalized notify resource ref, got %#v", specs[2].Resources[0])
+	}
+}
+
+// TestValidateHostServiceSpecsAcceptsAITextPurposeResources verifies AI text
+// host service declarations derive host:ai:text and require purpose resources.
+func TestValidateHostServiceSpecsAcceptsAITextPurposeResources(t *testing.T) {
+	specs := []*HostServiceSpec{{
+		Service: HostServiceAI,
+		Methods: []string{HostServiceMethodAITextGenerate},
+		Resources: []*HostServiceResourceSpec{{
+			Ref: " purpose:content.summary ",
+			Attributes: map[string]string{
+				"defaultTier":     "basic",
+				"maxOutputTokens": "1024",
+			},
+		}},
+	}}
+
+	if err := ValidateHostServiceSpecs(specs); err != nil {
+		t.Fatalf("expected ai text host service specs to validate, got %v", err)
+	}
+	if specs[0].Resources[0].Ref != "purpose:content.summary" {
+		t.Fatalf("expected normalized purpose resource ref, got %#v", specs[0].Resources[0])
+	}
+	capabilities := CapabilityMapFromHostServices(specs)
+	if _, ok := capabilities[CapabilityAIText]; !ok {
+		t.Fatalf("expected ai declaration to derive %s capability", CapabilityAIText)
+	}
+}
+
+// TestValidateHostServiceSpecsAcceptsAIMultimodalPurposeResources verifies
+// multimodal AI host service declarations derive method-specific capabilities.
+func TestValidateHostServiceSpecsAcceptsAIMultimodalPurposeResources(t *testing.T) {
+	specs := []*HostServiceSpec{{
+		Service: HostServiceAI,
+		Methods: []string{
+			HostServiceMethodAIImageGenerate,
+			HostServiceMethodAIEmbeddingCreate,
+			HostServiceMethodAIAudioTranscribe,
+			HostServiceMethodAIVisionAnalyze,
+			HostServiceMethodAIDocumentAnalyze,
+			HostServiceMethodAISafetyModerate,
+			HostServiceMethodAIVideoGenerate,
+			HostServiceMethodAIVideoOperationGet,
+		},
+		Resources: []*HostServiceResourceSpec{{
+			Ref: " purpose:media.pipeline ",
+			Attributes: map[string]string{
+				"defaultTier":      "standard",
+				"maxPayloadBytes":  "4096",
+				"maxInputAssets":   "4",
+				"maxOutputAssets":  "2",
+				"maxAssetBytes":    "1048576",
+				"allowedMimeTypes": "image/*,audio/mpeg,application/pdf",
+				"allowOperation":   "true",
+			},
+		}},
+	}}
+
+	if err := ValidateHostServiceSpecs(specs); err != nil {
+		t.Fatalf("expected multimodal ai host service specs to validate, got %v", err)
+	}
+	capabilities := CapabilityMapFromHostServices(specs)
+	for _, capability := range []string{
+		CapabilityAIImage,
+		CapabilityAIEmbedding,
+		CapabilityAIAudio,
+		CapabilityAIVision,
+		CapabilityAIDocument,
+		CapabilityAISafety,
+		CapabilityAIVideo,
+	} {
+		if _, ok := capabilities[capability]; !ok {
+			t.Fatalf("expected ai declaration to derive %s capability", capability)
+		}
+	}
+}
+
+// TestValidateHostServiceSpecsRejectsAITextInvalidResources verifies unsupported
+// AI methods and non-purpose resources are rejected before runtime.
+func TestValidateHostServiceSpecsRejectsAITextInvalidResources(t *testing.T) {
+	for _, testCase := range []HostServiceSpec{
+		{
+			Service: HostServiceAI,
+			Methods: []string{"computer.act"},
+			Resources: []*HostServiceResourceSpec{{
+				Ref: "purpose:content.summary",
+			}},
+		},
+		{
+			Service: HostServiceAI,
+			Methods: []string{"ui.operate"},
+			Resources: []*HostServiceResourceSpec{{
+				Ref: "purpose:content.summary",
+			}},
+		},
+		{
+			Service: HostServiceAI,
+			Methods: []string{HostServiceMethodAITextGenerate},
+			Resources: []*HostServiceResourceSpec{{
+				Ref: "content.summary",
+			}},
+		},
+		{
+			Service: HostServiceAI,
+			Methods: []string{HostServiceMethodAITextGenerate},
+			Resources: []*HostServiceResourceSpec{{
+				Ref:        "purpose:content.summary",
+				Attributes: map[string]string{"maxOutputTokens": "all"},
+			}},
+		},
+	} {
+		spec := testCase
+		if err := ValidateHostServiceSpecs([]*HostServiceSpec{&spec}); err == nil {
+			t.Fatalf("expected invalid ai host service declaration to be rejected: %#v", testCase)
+		}
 	}
 }
 

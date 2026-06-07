@@ -20,7 +20,8 @@ import (
 	pluginsvc "lina-core/internal/service/plugin"
 	"lina-core/internal/service/role"
 	"lina-core/internal/service/session"
-	capabilityhostconfig "lina-core/pkg/plugin/capability/hostconfig"
+	"lina-core/pkg/plugin/capability/aicap/aitext"
+	capabilityhostconfig "lina-core/pkg/plugin/capability/hostconfigcap"
 	"lina-core/pkg/plugin/capability/orgcap"
 	tenantcapsvc "lina-core/pkg/plugin/capability/tenantcap"
 )
@@ -49,7 +50,11 @@ func newUserTestService(tenantRuntimes ...tenantcapsvc.ProviderRuntime) Service 
 	authSvc := auth.New(configSvc, pluginSvc, orgCapSvc, roleSvc, tenantSvc, sessionStore, kvCacheSvc)
 	notifySvc := notify.New(tenantSvc)
 	apiDocSvc := apidoc.New(configSvc, bizCtxSvc, i18nSvc, pluginSvc)
-	hostConfigSvc := capabilityhostconfig.New(configSvc)
+	hostConfigReader, ok := configSvc.(capabilityhostconfig.RawConfigReader)
+	if !ok {
+		panic("test config service does not support raw host config reads")
+	}
+	hostConfigSvc := capabilityhostconfig.New(hostConfigReader)
 	capabilities, err := pluginsvc.NewHostServices(
 		apiDocSvc,
 		authSvc,
@@ -61,6 +66,7 @@ func newUserTestService(tenantRuntimes ...tenantcapsvc.ProviderRuntime) Service 
 		pluginSvc,
 		pluginSvc,
 		sessionStore,
+		aitext.New(pluginSvc),
 		orgCapSvc,
 		tenantSvc,
 		notifySvc,

@@ -18,7 +18,7 @@ import (
 
 	_ "lina-core/pkg/dbdriver"
 
-	"lina-core/pkg/testsupport"
+	"lina-core/internal/utility/testsupport"
 )
 
 // TestRequireCommandConfirmation verifies sensitive command confirmation tokens
@@ -399,6 +399,13 @@ var productionPanicPolicy = panicAuditPolicy{
 			Reason:   "Must helper is reserved for compile-time host service declarations",
 		},
 		{
+			Path:     "apps/lina-core/pkg/plugin/pluginbridge/internal/hostservice/hostservice_validation.go",
+			Function: "MustNormalizeHostServiceSpecsForPlugin",
+			Count:    1,
+			Category: panicCategoryMustConstructor,
+			Reason:   "Must helper is reserved for compile-time plugin-scoped host service declarations",
+		},
+		{
 			Path:     "apps/lina-core/internal/service/plugin/internal/datahost/internal/host/db.go",
 			Function: "registerPluginDataDrivers",
 			Count:    1,
@@ -422,9 +429,9 @@ var productionPanicPolicy = panicAuditPolicy{
 		{
 			Path:     "apps/lina-plugins/linapro-monitor-loginlog/backend/plugin.go",
 			Function: "init",
-			Count:    5,
+			Count:    6,
 			Category: panicCategoryPluginRegistration,
-			Reason:   "top-level source plugin registration chooses fail-fast after the error-returning registration API rejects invalid static declarations",
+			Reason:   "top-level source plugin, route, hook, and cron registration chooses fail-fast after error-returning registration APIs reject invalid static declarations",
 		},
 		{
 			Path:     "apps/lina-plugins/linapro-monitor-online/backend/plugin.go",
@@ -460,6 +467,13 @@ var productionPanicPolicy = panicAuditPolicy{
 			Count:    3,
 			Category: panicCategoryPluginRegistration,
 			Reason:   "top-level source plugin and framework provider factory registration chooses fail-fast after error-returning registration APIs reject invalid static declarations",
+		},
+		{
+			Path:     "apps/lina-plugins/linapro-ai-core/backend/plugin.go",
+			Function: "init",
+			Count:    4,
+			Category: panicCategoryPluginRegistration,
+			Reason:   "top-level source plugin, route, cron, and framework provider factory registration chooses fail-fast after error-returning registration APIs reject invalid static declarations",
 		},
 		{
 			Path:     "apps/lina-plugins/linapro-demo-source/backend/plugin.go",

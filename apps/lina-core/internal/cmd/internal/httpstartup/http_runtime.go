@@ -42,10 +42,11 @@ import (
 	"lina-core/pkg/dialect"
 	"lina-core/pkg/logger"
 	"lina-core/pkg/plugin/capability"
-	pluginserviceconfig "lina-core/pkg/plugin/capability/config"
-	pluginservicehostconfig "lina-core/pkg/plugin/capability/hostconfig"
-	pluginservicemanifest "lina-core/pkg/plugin/capability/manifest"
+	"lina-core/pkg/plugin/capability/aicap/aitext"
+	pluginservicehostconfig "lina-core/pkg/plugin/capability/hostconfigcap"
+	pluginservicemanifest "lina-core/pkg/plugin/capability/manifestcap"
 	"lina-core/pkg/plugin/capability/orgcap"
+	pluginserviceconfig "lina-core/pkg/plugin/capability/plugincap"
 	tenantcapsvc "lina-core/pkg/plugin/capability/tenantcap"
 )
 
@@ -60,6 +61,7 @@ type httpRuntime struct {
 	authTokenIssuer auth.TenantTokenIssuer
 	bizCtxSvc       bizctx.Service              // bizCtxSvc owns request-scoped business context mutation.
 	i18nSvc         i18nsvc.Service             // i18nSvc owns runtime language bundles and localization.
+	aiTextSvc       aitext.Service              // aiTextSvc exposes optional text AI capability.
 	orgCapSvc       orgcap.Service              // orgCapSvc exposes optional organization capability.
 	orgProjection   orgcap.ProjectionService    // orgProjection exposes host user-management organization projections.
 	roleSvc         role.Service                // roleSvc owns permission and access snapshot state.
@@ -100,7 +102,7 @@ type pluginStartupTenantProvisioner interface {
 // pluginManagementListPrewarmer is the startup-only contract for warming the
 // plugin management read model after runtime plugin state has converged.
 type pluginManagementListPrewarmer interface {
-	// PrewarmManagementList builds the complete plugin management list read model and returns build errors to the caller.
+	// PrewarmManagementList builds the plugin management summary list read model and returns build errors to the caller.
 	PrewarmManagementList(ctx context.Context) error
 }
 
@@ -207,6 +209,7 @@ func newHTTPRuntime(ctx context.Context, configSvc config.Service) (*httpRuntime
 	}
 	var (
 		orgCapSvc     = orgcap.New(pluginSvc)
+		aiTextSvc     = aitext.New(pluginSvc)
 		orgProjection = orgCapSvc
 		tenantSvc     = tenantcapsvc.New(pluginSvc, bizCtxSvc)
 		kvCacheSvc    = kvcache.New()
@@ -235,11 +238,16 @@ func newHTTPRuntime(ctx context.Context, configSvc config.Service) (*httpRuntime
 		closeHTTPCoordinationAfterInitError(ctx, coordinationSvc)
 		return nil, err
 	}
+	hostConfigReader, ok := configSvc.(pluginservicehostconfig.RawConfigReader)
+	if !ok {
+		closeHTTPCoordinationAfterInitError(ctx, coordinationSvc)
+		return nil, gerror.New("host config service does not support raw reads")
+	}
 	var (
 		jobMgmtSvc            = jobmgmtsvc.New(bizCtxSvc, configSvc, i18nSvc, jobRegistry, jobScheduler, scopeSvc)
 		middlewareSvc         = middleware.New(authSvc, bizCtxSvc, configSvc, i18nSvc, pluginSvc, roleSvc, tenantSvc)
-		hostConfigSvc         = pluginservicehostconfig.New(configSvc)
-		pluginConfigFactory   = pluginserviceconfig.NewFactory("", "")
+		hostConfigSvc         = pluginservicehostconfig.New(hostConfigReader)
+		pluginConfigFactory   = pluginserviceconfig.NewConfigFactory("", "")
 		pluginManifestFactory = pluginservicemanifest.NewFactory("")
 	)
 	capabilities, err := pluginsvc.NewHostServices(
@@ -253,6 +261,7 @@ func newHTTPRuntime(ctx context.Context, configSvc config.Service) (*httpRuntime
 		pluginSvc,
 		pluginSvc,
 		sessionStore,
+		aiTextSvc,
 		orgCapSvc,
 		tenantSvc,
 		notifySvc,
@@ -313,6 +322,7 @@ func newHTTPRuntime(ctx context.Context, configSvc config.Service) (*httpRuntime
 		authTokenIssuer: authTokenSvc,
 		bizCtxSvc:       bizCtxSvc,
 		i18nSvc:         i18nSvc,
+		aiTextSvc:       aiTextSvc,
 		orgCapSvc:       orgCapSvc,
 		orgProjection:   orgProjection,
 		roleSvc:         roleSvc,
