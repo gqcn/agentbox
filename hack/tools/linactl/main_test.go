@@ -881,19 +881,19 @@ func TestPrintStatusTableIncludesDevelopmentServiceDetails(t *testing.T) {
 	var stdout bytes.Buffer
 	err := devservice.PrintStatusTable(&stdout, []devservice.StatusRow{
 		{
-			Service: "Backend",
+			Entry:   "Lina Core",
 			Status:  "running",
 			URL:     "http://127.0.0.1:9120/",
 			PID:     "12345",
-			PIDFile: "temp/pids/backend.pid",
+			PIDFile: "temp/pids/lina-core-.pid",
 			LogFile: "temp/lina-core.log",
 		},
 		{
-			Service: "Frontend",
+			Entry:   "Lina Vben",
 			Status:  "stopped",
 			URL:     "http://127.0.0.1:5666/",
 			PID:     "-",
-			PIDFile: "temp/pids/frontend.pid",
+			PIDFile: "temp/pids/lina-vben.pid",
 			LogFile: "temp/lina-vben.log",
 		},
 	})
@@ -904,12 +904,12 @@ func TestPrintStatusTableIncludesDevelopmentServiceDetails(t *testing.T) {
 	output := stdout.String()
 	for _, expected := range []string{
 		"+",
-		"| Service",
-		"| Backend",
-		"| Frontend",
+		"| Entry",
+		"| Lina Core",
+		"| Lina Vben",
 		"| running",
 		"| stopped",
-		"temp/pids/backend.pid",
+		"temp/pids/lina-core-api.pid",
 		"temp/lina-vben.log",
 	} {
 		if !strings.Contains(output, expected) {
@@ -1380,8 +1380,8 @@ func TestRunDevStartsServicesAsAsyncProcessesAndPrintsFinalStatus(t *testing.T) 
 		t.Fatalf("runDev appears to have waited for service processes to exit: %s", elapsed)
 	}
 	for _, path := range []string{
-		filepath.Join(root, "temp", "pids", "backend.pid"),
-		filepath.Join(root, "temp", "pids", "frontend.pid"),
+		filepath.Join(root, "temp", "pids", "lina-core-api.pid"),
+		filepath.Join(root, "temp", "pids", "default-admin-workspace.pid"),
 	} {
 		pid := devservice.ReadPID(path)
 		if pid == 0 {
@@ -1399,16 +1399,24 @@ func TestRunDevStartsServicesAsAsyncProcessesAndPrintsFinalStatus(t *testing.T) 
 	}
 
 	output := stdout.String()
+	for _, expected := range []string{
+		"Lina Core is ready: http://127.0.0.1:9120/",
+		"Lina Vben is ready: http://127.0.0.1:5666/",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected readiness output to contain %q, got:\n%s", expected, output)
+		}
+	}
 	statusTitleIndex := strings.LastIndex(output, "LinaPro Framework Status")
 	if statusTitleIndex < 0 {
 		t.Fatalf("expected final status title in output:\n%s", output)
 	}
 	finalOutput := output[statusTitleIndex:]
 	for _, expected := range []string{
-		"| Service",
-		"| Backend",
-		"| Frontend",
-		"temp/pids/backend.pid",
+		"| Entry",
+		"| Lina Core",
+		"| Lina Vben",
+		"temp/pids/lina-core-api.pid",
 		"temp/lina-vben.log",
 	} {
 		if !strings.Contains(finalOutput, expected) {
@@ -1439,7 +1447,8 @@ func TestRunDevPassesRepositoryWasmOutputWhenPluginsEnabled(t *testing.T) {
 	}
 	writeFrontendDependencySentinel(t, root)
 
-	application := newApp(ioDiscard{}, ioDiscard{}, strings.NewReader(""))
+	var stdout bytes.Buffer
+	application := newApp(&stdout, ioDiscard{}, strings.NewReader(""))
 	application.root = root
 	application.execCommand = func(_ context.Context, name string, args ...string) *exec.Cmd {
 		if name == "go" && len(args) >= 1 && args[0] == "build" {
@@ -1462,8 +1471,8 @@ func TestRunDevPassesRepositoryWasmOutputWhenPluginsEnabled(t *testing.T) {
 		t.Fatalf("runDev returned error: %v", err)
 	}
 	for _, path := range []string{
-		filepath.Join(root, "temp", "pids", "backend.pid"),
-		filepath.Join(root, "temp", "pids", "frontend.pid"),
+		filepath.Join(root, "temp", "pids", "lina-core-api.pid"),
+		filepath.Join(root, "temp", "pids", "default-admin-workspace.pid"),
 	} {
 		pid := devservice.ReadPID(path)
 		if pid > 0 {
@@ -1477,6 +1486,9 @@ func TestRunDevPassesRepositoryWasmOutputWhenPluginsEnabled(t *testing.T) {
 	expected := filepath.Join(root, "temp", "output")
 	if !fileutil.FileExists(filepath.Join(expected, "linapro-demo-dynamic.wasm")) {
 		t.Fatalf("expected dev wasm artifact under %s", expected)
+	}
+	if !strings.Contains(stdout.String(), "Source plugin pages are mounted inside Lina Vben.") {
+		t.Fatalf("expected plugin entry hint, got:\n%s", stdout.String())
 	}
 }
 

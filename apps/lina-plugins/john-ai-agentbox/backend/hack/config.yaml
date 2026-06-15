@@ -1,0 +1,42 @@
+# Development-only configuration used by AgentBox plugin code generation.
+# Runtime code must not read this file.
+
+gfcli:
+  gen:
+    dao:
+      - link: "pgsql:postgres:postgres@tcp(127.0.0.1:55432)/agentbox_plugin_codegen?sslmode=disable"
+        tables: >-
+          john_ai_agentbox_agent_chat_interactions,
+          john_ai_agentbox_agent_chat_messages,
+          john_ai_agentbox_agent_chat_sessions,
+          john_ai_agentbox_agent_runtimes,
+          john_ai_agentbox_agent_terminal_sessions,
+          john_ai_agentbox_ai_capability_bindings,
+          john_ai_agentbox_ai_capability_tiers,
+          john_ai_agentbox_ai_invocation_logs,
+          john_ai_agentbox_ai_providers,
+          john_ai_agentbox_coding_agents,
+          john_ai_agentbox_coding_images,
+          john_ai_agentbox_provider_models,
+          john_ai_agentbox_settings,
+          john_ai_agentbox_system_prompt_overrides,
+          john_ai_agentbox_user_sessions,
+          john_ai_agentbox_user_settings,
+          john_ai_agentbox_users
+        removePrefix: "john_ai_agentbox_"
+        descriptionTag: true
+        noModelComment: true
+        stdTime: true
+        typeMapping:
+          timestamp:
+            type: "*time.Time"
+            import: time
+          "timestamp without time zone":
+            type: "*time.Time"
+            import: time
+          timestamptz:
+            type: "*time.Time"
+            import: time
+          "timestamp with time zone":
+            type: "*time.Time"
+            import: time

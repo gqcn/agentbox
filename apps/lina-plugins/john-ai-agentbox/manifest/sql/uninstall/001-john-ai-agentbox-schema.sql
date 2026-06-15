@@ -1,0 +1,17 @@
+DROP TABLE IF EXISTS john_ai_agentbox_agent_terminal_sessions;
+DROP TABLE IF EXISTS john_ai_agentbox_ai_invocation_logs;
+DROP TABLE IF EXISTS john_ai_agentbox_ai_capability_bindings;
+DROP TABLE IF EXISTS john_ai_agentbox_ai_capability_tiers;
+DROP TABLE IF EXISTS john_ai_agentbox_agent_chat_interactions;
+DROP TABLE IF EXISTS john_ai_agentbox_agent_chat_messages;
+DROP TABLE IF EXISTS john_ai_agentbox_agent_chat_sessions;
+DROP TABLE IF EXISTS john_ai_agentbox_agent_runtimes;
+DROP TABLE IF EXISTS john_ai_agentbox_user_sessions;
+DROP TABLE IF EXISTS john_ai_agentbox_user_settings;
+DROP TABLE IF EXISTS john_ai_agentbox_settings;
+DROP TABLE IF EXISTS john_ai_agentbox_system_prompt_overrides;
+DROP TABLE IF EXISTS john_ai_agentbox_coding_agents;
+DROP TABLE IF EXISTS john_ai_agentbox_provider_models;
+DROP TABLE IF EXISTS john_ai_agentbox_coding_images;
+DROP TABLE IF EXISTS john_ai_agentbox_ai_providers;
+DROP TABLE IF EXISTS john_ai_agentbox_users;

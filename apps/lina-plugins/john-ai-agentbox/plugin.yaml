@@ -1,0 +1,14 @@
+id: john-ai-agentbox
+name: AI AgentBox
+version: 0.1.0
+type: source
+scope_nature: tenant_aware
+supports_multi_tenant: true
+default_install_mode: tenant_scoped
+description: AgentBox.
+author: john
+license: MIT
+public_assets:
+  - source: frontend/public
+    mount: /
+    index: index.html

@@ -1,0 +1,43 @@
+# john-ai-agentbox 源码插件配置示例。
+runtime:
+  # 运行模式。当前迁移切片仅支持 single-node。
+  mode: single-node
+  docker:
+    # Docker daemon 地址。留空时使用 Docker 客户端环境变量和默认配置。
+    host: ""
+    # AgentBox 日志接口返回的最近容器日志行数。
+    containerLogTail: 400
+    # 停止 AgentBox 托管容器时的宽限时间。
+    stopTimeout: 10s
+  workspace:
+    # 单个 Agent 工作区在容器内的根目录。
+    rootPath: /home/agent/workspace
+    # Agent runtime 可访问的容器内共享目录。
+    sharedPath: /home/agent/shared
+    # 单次工作区文本预览或 Git 可编辑内容读取的最大字节数。
+    previewLimitBytes: 1048576
+    # 单个工作区上传文件允许的最大字节数。
+    uploadFileLimitBytes: 10485760
+    # 单次工作区上传请求允许的最大文件数。
+    uploadCountLimit: 16
+    # 单次 runtime 技能发现返回的最大技能数量。
+    skillListLimit: 200
+    # 单个技能 SKILL.md 清单允许读取的最大字节数。
+    skillManifestLimitBytes: 262144
+  services:
+    # 单个 Agent 返回的监听中 runtime 服务数量上限。
+    discoveryLimit: 100
+
+auth:
+  # AgentBox 会话有效期。
+  sessionTtl: 24h
+
+providers:
+  # 远程 provider 和模型目录请求超时时间。
+  requestTimeout: 20s
+  # 单次 provider 同步允许导入的远程模型数量上限。
+  remoteModelSyncLimit: 200
+
+ai:
+  # 单次 AI 调用请求超时时间。
+  requestTimeout: 20s
