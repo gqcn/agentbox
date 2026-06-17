@@ -4,6 +4,7 @@
 package wasm
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -48,9 +49,34 @@ type ExecutionInput struct {
 	RequestID string
 	// Identity carries the sanitized user identity snapshot when available.
 	Identity *bridgecontract.IdentitySnapshotV1
-	// CronCollector receives dynamic-plugin cron registrations during reserved
-	// discovery executions.
-	CronCollector CronRegistrationCollector
+	// JobCollector captures dynamic-plugin job declarations during Jobs discovery.
+	JobCollector JobRegistrationCollector
+}
+
+// Runtime defines the dynamic-plugin WASM execution runtime owned by a plugin
+// service instance.
+type Runtime interface {
+	// ExecuteBridge executes one bridge request against the archived active WASM
+	// artifact using this runtime instance.
+	ExecuteBridge(
+		ctx context.Context,
+		input ExecutionInput,
+		requestContent []byte,
+	) (*bridgecontract.BridgeResponseEnvelopeV1, error)
+	// InvalidateCache removes the cached compiled module for the given artifact path.
+	InvalidateCache(ctx context.Context, artifactPath string)
+	// InvalidateAllCache removes all cached compiled modules owned by this runtime.
+	InvalidateAllCache(ctx context.Context)
+}
+
+// runtimeImpl owns host-service dependencies and compiled module cache state for
+// one plugin service instance.
+type runtimeImpl struct {
+	hostServices *hostServiceRuntime
+	cacheMu      sync.RWMutex
+	cache        map[string]*wasmCacheEntry
+	inflight     map[string]*wasmCompileInflight
+	compileHook  func(string)
 }
 
 // wasmCacheEntry stores one compiled module together with the runtime that owns
@@ -67,6 +93,14 @@ type wasmCacheEntry struct {
 	closed      bool
 }
 
+// wasmCompileInflight coordinates one artifact compilation outside the global
+// cache lock so concurrent requests share the same result.
+type wasmCompileInflight struct {
+	done  chan struct{}
+	entry *wasmCacheEntry
+	err   error
+}
+
 // wasmModuleLease pins a cached module entry while a bridge execution uses its
 // runtime and compiled module.
 type wasmModuleLease struct {
@@ -74,11 +108,3 @@ type wasmModuleLease struct {
 	runtime  wazero.Runtime
 	compiled wazero.CompiledModule
 }
-
-// wasmModuleCache caches compiled Wasm modules keyed by the archived active
-// artifact path. Dynamic release archive paths include the release checksum, so
-// same-version refreshes naturally compile a separate module.
-var (
-	wasmModuleCacheMu sync.RWMutex
-	wasmModuleCache   = make(map[string]*wasmCacheEntry)
-)

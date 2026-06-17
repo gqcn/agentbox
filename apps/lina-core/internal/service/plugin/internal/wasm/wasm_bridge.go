@@ -15,11 +15,14 @@ import (
 
 // ExecuteBridge executes one bridge request against the archived active wasm
 // artifact using the alloc/write/execute/read ABI sequence.
-func ExecuteBridge(
+func (r *runtimeImpl) ExecuteBridge(
 	ctx context.Context,
 	input ExecutionInput,
 	requestContent []byte,
 ) (response *bridgecontract.BridgeResponseEnvelopeV1, err error) {
+	if r == nil || r.hostServices == nil {
+		return nil, gerror.New("wasm runtime is not configured")
+	}
 	ctx, cancel := bridgeExecutionContext(ctx)
 	if cancel != nil {
 		defer cancel()
@@ -29,7 +32,7 @@ func ExecuteBridge(
 		return nil, gerror.New("dynamic plugin is missing Wasm bridge metadata")
 	}
 
-	lease, err := getOrCompileWasmModule(ctx, input.ArtifactPath)
+	lease, err := r.getOrCompileWasmModule(ctx, input.ArtifactPath)
 	if err != nil {
 		return nil, err
 	}
@@ -48,19 +51,27 @@ func ExecuteBridge(
 		}
 	}()
 
+	hostServiceSnapshot := newHostServiceAccessSnapshot(input.HostServices)
+	hostServices := input.HostServices
+	if hostServiceSnapshot != nil {
+		hostServices = hostServiceSnapshot.hostServices
+	}
+
 	// Inject host call context so that host function callbacks can access
 	// plugin identity and capabilities.
 	ctx = withHostCallContext(ctx, &hostCallContext{
+		runtime:                   r.hostServices,
 		pluginID:                  input.PluginID,
 		capabilities:              input.Capabilities,
-		hostServices:              input.HostServices,
+		hostServices:              hostServices,
+		hostServiceSnapshot:       hostServiceSnapshot,
 		artifactDefaultConfig:     append([]byte(nil), input.ArtifactDefaultConfig...),
 		artifactManifestResources: cloneExecutionManifestResources(input.ArtifactManifestResources),
 		executionSource:           input.ExecutionSource,
 		routePath:                 input.RoutePath,
 		requestID:                 input.RequestID,
 		identity:                  input.Identity,
-		cronCollector:             input.CronCollector,
+		jobCollector:              input.JobCollector,
 	})
 
 	var (
@@ -72,8 +83,7 @@ func ExecuteBridge(
 		return nil, gerror.New("dynamic plugin Wasm bridge is missing required exported functions")
 	}
 	if initializeFn != nil {
-		// `_initialize` is optional and is only invoked when guest toolchains emit
-		// it, keeping the host compatible with both reactor and non-reactor builds.
+		// Toolchain-emitted initialization runs before bridge memory exchange.
 		if _, err := initializeFn.Call(ctx); err != nil {
 			return nil, gerror.Wrap(err, "initialize dynamic plugin Wasm runtime failed")
 		}

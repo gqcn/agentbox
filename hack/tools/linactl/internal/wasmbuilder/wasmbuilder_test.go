@@ -100,7 +100,7 @@ func TestBuildRuntimeWasmArtifactFromSourceEmbedsDeclaredAssets(t *testing.T) {
 	mustWriteFile(
 		t,
 		filepath.Join(pluginDir, "backend", "plugin.go"),
-		"package backend\n\nimport bridgeguest \"lina-core/pkg/plugin/pluginbridge/guest\"\n\nfunc RegisterRoutes(registrar bridgeguest.DynamicRouteRegistrar) error {\n\treturn registrar.Group(\"/api/v1\", \"dynamic/v1\")\n}\n",
+		"package backend\n\nimport bridgeplugin \"lina-core/pkg/plugin/pluginbridge\"\n\nfunc RegisterPlugin(plugin bridgeplugin.Declarations) error {\n\treturn plugin.Routes().Group(\"/api/v1\", \"dynamic/v1\")\n}\n",
 	)
 	mustWriteFile(
 		t,
@@ -350,6 +350,42 @@ func TestCollectLifecycleSpecsAutoDiscoversBackendHandlers(t *testing.T) {
 		items[1].RequestType != "AfterInstallReq" ||
 		items[1].InternalPath != "/__lifecycle/after-install" {
 		t.Fatalf("unexpected after-install lifecycle spec: %#v", items[1])
+	}
+}
+
+func TestCollectLifecycleSpecsReadsCodeOwnedTimeout(t *testing.T) {
+	pluginDir := t.TempDir()
+	mustWriteFile(
+		t,
+		filepath.Join(pluginDir, "backend", "controller.go"),
+		`package backend
+
+import "context"
+
+const BeforeInstallTimeoutMs = 120000
+
+type Controller struct{}
+
+type LifecycleDecisionRes struct {
+	OK bool `+"`json:\"ok\"`"+`
+}
+
+type BeforeInstallReq struct{}
+
+func (c *Controller) BeforeInstall(_ context.Context, _ *BeforeInstallReq) (*LifecycleDecisionRes, error) {
+	return &LifecycleDecisionRes{OK: true}, nil
+}
+`,
+	)
+
+	items, err := collectLifecycleSpecs(pluginDir, "plugin-dev-dynamic-lifecycle")
+	if err != nil {
+		t.Fatalf("expected lifecycle code timeout discovery to succeed, got error: %v", err)
+	}
+	if len(items) != 1 ||
+		items[0].Operation != protocol.LifecycleOperationBeforeInstall ||
+		items[0].TimeoutMs != 120000 {
+		t.Fatalf("unexpected lifecycle code timeout result: %#v", items)
 	}
 }
 

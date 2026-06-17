@@ -14,17 +14,20 @@ import (
 	"strconv"
 	"strings"
 
-	bridgeguest "lina-core/pkg/plugin/pluginbridge/guest"
+	bridgeplugin "lina-core/pkg/plugin/pluginbridge"
 	"lina-core/pkg/plugin/pluginbridge/protocol"
 )
 
 const (
-	// routeRegisterFunctionName is the dynamic backend callback inspected by the
-	// builder to mirror source-plugin route registration.
-	routeRegisterFunctionName = "RegisterRoutes"
+	// pluginRegisterFunctionName is the dynamic backend callback inspected by
+	// the builder to mirror source-plugin startup declarations.
+	pluginRegisterFunctionName = "RegisterPlugin"
 	// routeRegisterGroupMethodName is the registrar method used to bind a route
 	// group prefix to one backend/api-relative package.
 	routeRegisterGroupMethodName = "Group"
+	// routeFacadeMethodName is the Declarations method returning route
+	// declarations.
+	routeFacadeMethodName = "Routes"
 )
 
 func collectHookSpecs(pluginDir string, pluginID string) ([]*hookSpec, error) {
@@ -155,6 +158,10 @@ func discoverLifecycleSpecs(pluginDir string, pluginID string) ([]*protocol.Life
 		if parseErr != nil {
 			return fmt.Errorf("failed to parse backend file %s: %w", path, parseErr)
 		}
+		lifecycleTimeouts, timeoutErr := collectLifecycleTimeoutsFromFile(pluginID, fileNode)
+		if timeoutErr != nil {
+			return fmt.Errorf("failed to inspect lifecycle timeout in %s: %w", path, timeoutErr)
+		}
 		for _, decl := range fileNode.Decls {
 			funcDecl, ok := decl.(*ast.FuncDecl)
 			if !ok || funcDecl == nil || funcDecl.Recv == nil || funcDecl.Name == nil {
@@ -170,6 +177,9 @@ func discoverLifecycleSpecs(pluginDir string, pluginID string) ([]*protocol.Life
 			if previousPath, exists := seen[spec.Operation]; exists {
 				return fmt.Errorf("plugin lifecycle handler operation is duplicated for plugin %s: %s in %s and %s", pluginID, spec.Operation, previousPath, path)
 			}
+			if timeoutMs, exists := lifecycleTimeouts[spec.Operation]; exists {
+				spec.TimeoutMs = timeoutMs
+			}
 			seen[spec.Operation] = path
 			items = append(items, spec)
 		}
@@ -180,6 +190,91 @@ func discoverLifecycleSpecs(pluginDir string, pluginID string) ([]*protocol.Life
 	}
 	sortLifecycleSpecs(items)
 	return items, nil
+}
+
+func collectLifecycleTimeoutsFromFile(
+	pluginID string,
+	fileNode *ast.File,
+) (map[protocol.LifecycleOperation]int, error) {
+	timeouts := make(map[protocol.LifecycleOperation]int)
+	if fileNode == nil {
+		return timeouts, nil
+	}
+	for _, decl := range fileNode.Decls {
+		genDecl, ok := decl.(*ast.GenDecl)
+		if !ok || genDecl == nil || genDecl.Tok != token.CONST {
+			continue
+		}
+		for _, item := range genDecl.Specs {
+			valueSpec, ok := item.(*ast.ValueSpec)
+			if !ok || valueSpec == nil {
+				continue
+			}
+			if err := collectLifecycleTimeoutsFromValueSpec(pluginID, valueSpec, timeouts); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return timeouts, nil
+}
+
+func collectLifecycleTimeoutsFromValueSpec(
+	pluginID string,
+	valueSpec *ast.ValueSpec,
+	timeouts map[protocol.LifecycleOperation]int,
+) error {
+	for index, name := range valueSpec.Names {
+		if name == nil {
+			continue
+		}
+		operation, ok := lifecycleOperationFromTimeoutConst(name.Name)
+		if !ok {
+			continue
+		}
+		if _, exists := timeouts[operation]; exists {
+			return fmt.Errorf("plugin lifecycle timeout constant is duplicated for plugin %s operation %s", pluginID, operation)
+		}
+		if index >= len(valueSpec.Values) {
+			return fmt.Errorf("plugin lifecycle timeout constant requires an explicit integer value for plugin %s operation %s", pluginID, operation)
+		}
+		timeoutMs, err := lifecycleTimeoutConstValue(pluginID, operation, valueSpec.Values[index])
+		if err != nil {
+			return err
+		}
+		timeouts[operation] = timeoutMs
+	}
+	return nil
+}
+
+func lifecycleOperationFromTimeoutConst(name string) (protocol.LifecycleOperation, bool) {
+	trimmed := strings.TrimSpace(name)
+	if !strings.HasSuffix(trimmed, "TimeoutMs") {
+		return "", false
+	}
+	operationName := strings.TrimSuffix(trimmed, "TimeoutMs")
+	if !protocol.IsSupportedLifecycleOperation(operationName) {
+		return "", false
+	}
+	return protocol.LifecycleOperation(operationName), true
+}
+
+func lifecycleTimeoutConstValue(
+	pluginID string,
+	operation protocol.LifecycleOperation,
+	expr ast.Expr,
+) (int, error) {
+	basicLit, ok := expr.(*ast.BasicLit)
+	if !ok || basicLit.Kind != token.INT {
+		return 0, fmt.Errorf("plugin lifecycle timeout constant must be an integer literal for plugin %s operation %s", pluginID, operation)
+	}
+	timeoutMs, err := strconv.Atoi(strings.TrimSpace(basicLit.Value))
+	if err != nil {
+		return 0, fmt.Errorf("plugin lifecycle timeout constant is invalid for plugin %s operation %s: %w", pluginID, operation, err)
+	}
+	if timeoutMs < 0 {
+		return 0, fmt.Errorf("plugin lifecycle timeout constant cannot be negative for plugin %s operation %s", pluginID, operation)
+	}
+	return timeoutMs, nil
 }
 
 func isLifecycleControllerSourceFile(backendDir string, filePath string) bool {
@@ -302,7 +397,7 @@ func isErrorType(expr ast.Expr) bool {
 }
 
 func buildLifecycleInternalPath(operation string) string {
-	return "/__lifecycle" + bridgeguest.BuildGuestControllerInternalPath(operation)
+	return "/__lifecycle" + bridgeplugin.BuildGuestControllerInternalPath(operation)
 }
 
 func mergeLifecycleSpecs(
@@ -541,7 +636,7 @@ func collectRouteGroupBindings(pluginDir string, apiDir string) (map[string]stri
 	prefixes := make(map[string]string)
 	for _, decl := range fileNode.Decls {
 		funcDecl, ok := decl.(*ast.FuncDecl)
-		if !ok || funcDecl == nil || funcDecl.Name == nil || funcDecl.Name.Name != routeRegisterFunctionName {
+		if !ok || funcDecl == nil || funcDecl.Name == nil || funcDecl.Name.Name != pluginRegisterFunctionName {
 			continue
 		}
 		items, extractErr := extractRouteGroupBindingsFromFunc(funcDecl, collectStringConstsFromFile(fileNode))
@@ -562,7 +657,7 @@ func collectRouteGroupBindings(pluginDir string, apiDir string) (map[string]stri
 	return prefixes, nil
 }
 
-// routeGroupBinding records one registrar.Group(prefix, apiPackage) call.
+// routeGroupBinding records one plugin.Routes().Group(prefix, apiPackage) call.
 type routeGroupBinding struct {
 	// prefix is the plugin-owned route group prefix.
 	prefix string
@@ -570,8 +665,8 @@ type routeGroupBinding struct {
 	apiPackage string
 }
 
-// extractRouteGroupBindingsFromFunc extracts registrar.Group calls from one
-// dynamic RegisterRoutes function.
+// extractRouteGroupBindingsFromFunc extracts plugin.Routes().Group calls from
+// one dynamic RegisterPlugin function.
 func extractRouteGroupBindingsFromFunc(
 	funcDecl *ast.FuncDecl,
 	stringConsts map[string]string,
@@ -579,8 +674,9 @@ func extractRouteGroupBindingsFromFunc(
 	if funcDecl.Body == nil {
 		return nil, nil
 	}
-	registrarNames := routeRegistrarParamNames(funcDecl)
-	if len(registrarNames) == 0 {
+	pluginNames := declarationParamNames(funcDecl)
+	registrarNames := routeDeclarationParamNames(funcDecl)
+	if len(pluginNames) == 0 && len(registrarNames) == 0 {
 		return nil, nil
 	}
 	items := make([]routeGroupBinding, 0)
@@ -597,11 +693,7 @@ func extractRouteGroupBindingsFromFunc(
 		if !ok || selector == nil || selector.Sel == nil || selector.Sel.Name != routeRegisterGroupMethodName {
 			return true
 		}
-		receiver, ok := selector.X.(*ast.Ident)
-		if !ok || receiver == nil {
-			return true
-		}
-		if _, allowed := registrarNames[receiver.Name]; !allowed {
+		if !isRouteGroupReceiver(selector.X, pluginNames, registrarNames) {
 			return true
 		}
 		if len(callExpr.Args) != 2 {
@@ -630,15 +722,26 @@ func extractRouteGroupBindingsFromFunc(
 	return items, nil
 }
 
-// routeRegistrarParamNames returns RegisterRoutes parameters that implement
-// the dynamic route registrar contract by type name.
-func routeRegistrarParamNames(funcDecl *ast.FuncDecl) map[string]struct{} {
+// declarationParamNames returns RegisterPlugin parameters with the dynamic
+// plugin declaration contract type name.
+func declarationParamNames(funcDecl *ast.FuncDecl) map[string]struct{} {
+	return parameterNamesByTypeName(funcDecl, "Declarations")
+}
+
+// routeDeclarationParamNames returns direct route facade parameters that
+// implement the route declaration contract by type name.
+func routeDeclarationParamNames(funcDecl *ast.FuncDecl) map[string]struct{} {
+	return parameterNamesByTypeName(funcDecl, "RouteDeclarations")
+}
+
+// parameterNamesByTypeName returns parameters matching one interface type name.
+func parameterNamesByTypeName(funcDecl *ast.FuncDecl, typeName string) map[string]struct{} {
 	names := make(map[string]struct{})
 	if funcDecl == nil || funcDecl.Type == nil || funcDecl.Type.Params == nil {
 		return names
 	}
 	for _, field := range funcDecl.Type.Params.List {
-		if field == nil || astTypeName(field.Type) != "DynamicRouteRegistrar" {
+		if field == nil || astTypeName(field.Type) != typeName {
 			continue
 		}
 		for _, name := range field.Names {
@@ -649,6 +752,36 @@ func routeRegistrarParamNames(funcDecl *ast.FuncDecl) map[string]struct{} {
 		}
 	}
 	return names
+}
+
+// isRouteGroupReceiver reports whether a Group call receiver is either a
+// RouteDeclarations parameter or plugin.Routes() from a Declarations
+// parameter.
+func isRouteGroupReceiver(
+	expr ast.Expr,
+	pluginNames map[string]struct{},
+	registrarNames map[string]struct{},
+) bool {
+	receiver, ok := expr.(*ast.Ident)
+	if ok && receiver != nil {
+		_, allowed := registrarNames[receiver.Name]
+		return allowed
+	}
+
+	callExpr, ok := expr.(*ast.CallExpr)
+	if !ok || callExpr == nil || len(callExpr.Args) != 0 {
+		return false
+	}
+	selector, ok := callExpr.Fun.(*ast.SelectorExpr)
+	if !ok || selector == nil || selector.Sel == nil || selector.Sel.Name != routeFacadeMethodName {
+		return false
+	}
+	pluginIdent, ok := selector.X.(*ast.Ident)
+	if !ok || pluginIdent == nil {
+		return false
+	}
+	_, allowed := pluginNames[pluginIdent.Name]
+	return allowed
 }
 
 // collectStringConstsFromFile collects file-local string constants that route

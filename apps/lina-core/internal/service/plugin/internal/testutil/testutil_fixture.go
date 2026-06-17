@@ -12,6 +12,7 @@ import (
 	"github.com/gogf/gf/v2/errors/gerror"
 
 	"lina-core/internal/service/plugin/internal/catalog"
+	"lina-core/internal/service/plugin/internal/plugintypes"
 	"lina-core/internal/service/plugin/internal/runtime"
 	"lina-core/pkg/plugin/pluginbridge/protocol"
 	"lina-core/pkg/plugin/pluginhost"
@@ -49,15 +50,15 @@ func CreateTestPluginDir(t *testing.T, pluginID string) string {
 		"id: "+pluginID+"\nname: test\nversion: 0.1.0\ntype: source\nscope_nature: tenant_aware\nsupports_multi_tenant: true\ndefault_install_mode: tenant_scoped\n",
 	)
 
-	sourcePlugin := pluginhost.NewSourcePlugin(pluginID)
+	sourcePlugin := pluginhost.NewDeclarations(pluginID)
 	sourcePlugin.Assets().UseEmbeddedFiles(os.DirFS(pluginDir))
-	if err := sourcePlugin.Cron().RegisterCron(
-		pluginhost.ExtensionPointCronRegister,
+	if err := sourcePlugin.Jobs().RegisterJobs(
+		pluginhost.ExtensionPointJobsRegister,
 		pluginhost.CallbackExecutionModeBlocking,
-		func(ctx context.Context, registrar pluginhost.CronRegistrar) error {
+		func(ctx context.Context, registrar pluginhost.JobsRegistrar) error {
 			services := registrar.Services()
 			if services == nil || services.Plugins() == nil || services.Plugins().Config() == nil {
-				return gerror.New("test source plugin cron requires host config service")
+				return gerror.New("test source plugin job requires host config service")
 			}
 			if _, err := services.Plugins().Config().Exists(ctx, "monitor.interval"); err != nil {
 				return err
@@ -65,16 +66,16 @@ func CreateTestPluginDir(t *testing.T, pluginID string) string {
 			return registrar.AddWithMetadata(
 				ctx,
 				"# * * * * *",
-				pluginID+"-test-source-fixture-cron",
-				"Test Source Fixture Cron",
-				"Verifies source-plugin cron collection receives host services.",
+				pluginID+"-test-source-fixture-job",
+				"Test Source Fixture Job",
+				"Verifies source-plugin job collection receives host services.",
 				func(ctx context.Context) error {
 					return nil
 				},
 			)
 		},
 	); err != nil {
-		t.Fatalf("failed to register source plugin fixture cron %s: %v", pluginID, err)
+		t.Fatalf("failed to register source plugin fixture job %s: %v", pluginID, err)
 	}
 	cleanup, err := pluginhost.RegisterSourcePluginForTest(sourcePlugin)
 	if err != nil {
@@ -146,10 +147,10 @@ func CreateTestRuntimePluginDirWithFrontendAssets(
 			ID:                  pluginID,
 			Name:                pluginName,
 			Version:             version,
-			Type:                catalog.TypeDynamic.String(),
-			ScopeNature:         catalog.ScopeNatureTenantAware.String(),
+			Type:                plugintypes.TypeDynamic.String(),
+			ScopeNature:         plugintypes.ScopeNatureTenantAware.String(),
 			SupportsMultiTenant: &supportsMultiTenant,
-			DefaultInstallMode:  catalog.InstallModeTenantScoped.String(),
+			DefaultInstallMode:  plugintypes.InstallModeTenantScoped.String(),
 			PublicAssets: []*catalog.PublicAssetSpec{
 				{Source: "frontend/pages", Mount: "/"},
 			},

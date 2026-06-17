@@ -3,9 +3,16 @@
 package testutil
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"sort"
+	"strings"
+	"sync"
 	"time"
+
+	"lina-core/internal/model/entity"
 
 	"github.com/gogf/gf/v2/container/gvar"
 	"github.com/gogf/gf/v2/database/gdb"
@@ -13,18 +20,20 @@ import (
 	"lina-core/internal/service/bizctx"
 	"lina-core/internal/service/cachecoord"
 	configsvc "lina-core/internal/service/config"
-	"lina-core/internal/service/hostlock"
 	i18nsvc "lina-core/internal/service/i18n"
-	"lina-core/internal/service/kvcache"
 	"lina-core/internal/service/locker"
-	"lina-core/internal/service/notify"
 	"lina-core/internal/service/plugin/internal/catalog"
+	plugindep "lina-core/internal/service/plugin/internal/dependency"
 	"lina-core/internal/service/plugin/internal/frontend"
 	"lina-core/internal/service/plugin/internal/integration"
 	"lina-core/internal/service/plugin/internal/lifecycle"
+	"lina-core/internal/service/plugin/internal/migration"
 	"lina-core/internal/service/plugin/internal/openapi"
 	"lina-core/internal/service/plugin/internal/runtime"
+	"lina-core/internal/service/plugin/internal/store"
+	"lina-core/internal/service/plugin/internal/upgrade"
 	"lina-core/internal/service/plugin/internal/wasm"
+	"lina-core/internal/service/role"
 	"lina-core/internal/service/session"
 	"lina-core/pkg/plugin/capability"
 	capabilityai "lina-core/pkg/plugin/capability/aicap"
@@ -35,7 +44,6 @@ import (
 	"lina-core/pkg/plugin/capability/bizctxcap"
 	"lina-core/pkg/plugin/capability/cachecap"
 	"lina-core/pkg/plugin/capability/capmodel"
-	capabilityconfigcap "lina-core/pkg/plugin/capability/configcap"
 	capabilitydictcap "lina-core/pkg/plugin/capability/dictcap"
 	capabilityfilecap "lina-core/pkg/plugin/capability/filecap"
 	"lina-core/pkg/plugin/capability/hostconfigcap"
@@ -43,17 +51,20 @@ import (
 	"lina-core/pkg/plugin/capability/i18ncap"
 	capabilityinfracap "lina-core/pkg/plugin/capability/infracap"
 	capabilityjobcap "lina-core/pkg/plugin/capability/jobcap"
+	"lina-core/pkg/plugin/capability/lockcap"
 	"lina-core/pkg/plugin/capability/manifestcap"
 	capabilitymanifest "lina-core/pkg/plugin/capability/manifestcap"
 	capabilitynotifycap "lina-core/pkg/plugin/capability/notifycap"
 	capabilityorgcap "lina-core/pkg/plugin/capability/orgcap"
+	"lina-core/pkg/plugin/capability/orgcap/orgspi"
 	"lina-core/pkg/plugin/capability/plugincap"
 	capabilityconfig "lina-core/pkg/plugin/capability/plugincap"
 	capabilityplugincap "lina-core/pkg/plugin/capability/plugincap"
 	"lina-core/pkg/plugin/capability/routecap"
 	capabilitysessioncap "lina-core/pkg/plugin/capability/sessioncap"
+	"lina-core/pkg/plugin/capability/storagecap"
 	"lina-core/pkg/plugin/capability/tenantcap"
-	tenantcapsvc "lina-core/pkg/plugin/capability/tenantcap"
+	"lina-core/pkg/plugin/capability/tenantcap/tenantspi"
 	capabilityusercap "lina-core/pkg/plugin/capability/usercap"
 	"lina-core/pkg/plugin/pluginhost"
 )
@@ -62,8 +73,12 @@ import (
 type Services struct {
 	// Catalog provides manifest discovery, registry, and release access.
 	Catalog catalog.Service
+	// Store owns plugin governance persistence and stable projections.
+	Store store.Service
 	// Lifecycle provides install and uninstall orchestration.
 	Lifecycle lifecycle.Service
+	// Migration executes plugin SQL lifecycle phases.
+	Migration migration.Service
 	// Runtime provides artifact parsing, reconcile, and route execution.
 	Runtime runtime.Service
 	// Frontend provides in-memory frontend bundle management.
@@ -72,6 +87,8 @@ type Services struct {
 	Integration integration.Service
 	// OpenAPI provides dynamic route OpenAPI projection.
 	OpenAPI openapi.Service
+	// Upgrade provides unified plugin upgrade status and preview orchestration.
+	Upgrade upgrade.Service
 }
 
 // singleNodeTopology provides the default non-clustered topology for plugin tests.
@@ -92,76 +109,179 @@ func (singleNodeTopology) CurrentNodeID() string {
 	return "test-node"
 }
 
+// upgradeTopologyAdapter adapts test topology naming to upgrade.Topology.
+type upgradeTopologyAdapter struct {
+	topology singleNodeTopology
+}
+
+// IsEnabled reports whether clustered coordination is enabled for tests.
+func (a upgradeTopologyAdapter) IsEnabled() bool {
+	return a.topology.IsClusterModeEnabled()
+}
+
+// NodeID returns the stable test node identifier.
+func (a upgradeTopologyAdapter) NodeID() string {
+	return a.topology.CurrentNodeID()
+}
+
 // NewServices creates a fully wired plugin sub-service set for tests.
 func NewServices() *Services {
+	return newServicesWithInjected(nil, nil, nil)
+}
+
+// NewServicesWithCapabilities creates a test service graph with explicit source-plugin capabilities.
+func NewServicesWithCapabilities(capabilities capability.Services) *Services {
+	return newServicesWithInjected(capabilities, nil, nil)
+}
+
+// NewServicesWithDynamicJobExecutor creates a test service graph with an explicit dynamic job executor.
+func NewServicesWithDynamicJobExecutor(executor integration.DynamicJobExecutor) *Services {
+	return newServicesWithInjected(nil, executor, nil)
+}
+
+// NewServicesWithUploadSizeProvider creates a test graph with an explicit
+// runtime upload-size provider.
+func NewServicesWithUploadSizeProvider(uploadSize runtime.UploadSizeProvider) *Services {
+	return newServicesWithInjected(nil, nil, uploadSize)
+}
+
+func newServicesWithInjected(
+	injectedCapabilities capability.Services,
+	injectedDynamicJobExecutor integration.DynamicJobExecutor,
+	injectedUploadSize runtime.UploadSizeProvider,
+) *Services {
 	var (
-		configProvider = configsvc.New()
-		bizCtxProvider = bizctx.New()
-		cacheCoordSvc  = cachecoord.Default(cachecoord.NewStaticTopology(false))
-		i18nService    = i18nsvc.New(bizCtxProvider, configProvider, cacheCoordSvc)
-		catalogSvc     = catalog.New(configProvider)
-		lifecycleSvc   = lifecycle.New(catalogSvc)
-		frontendSvc    = frontend.New(catalogSvc)
-		openapiSvc     = openapi.New(catalogSvc)
-		lockerSvc      = locker.New()
-		runtimeSvc     = runtime.New(catalogSvc, lifecycleSvc, frontendSvc, openapiSvc, i18nService, lockerSvc)
-		integrationSvc = integration.New(catalogSvc)
-		topology       = singleNodeTopology{}
-		kvCacheSvc     = kvcache.New()
-		sessionStore   = session.NewDBStore()
-		tenantSvc      = tenantcapsvc.New(nil, bizCtxProvider)
-		notifySvc      = notify.New(tenantSvc)
-		capabilitySvc  = newTestCapabilities(bizCtxProvider)
+		configProvider  = configsvc.New()
+		bizCtxProvider  = bizctx.New()
+		cacheCoordSvc   = cachecoord.Default(cachecoord.NewStaticTopology(false))
+		i18nService     = i18nsvc.New(bizCtxProvider, configProvider, cacheCoordSvc)
+		catalogSvc      = catalog.New(configProvider)
+		topology        = singleNodeTopology{}
+		storeSvc        = store.New(catalogSvc, topology)
+		migrationSvc    = migration.New(catalogSvc, storeSvc)
+		frontendSvc     = frontend.New(catalogSvc, storeSvc)
+		openapiSvc      = openapi.New(catalogSvc, storeSvc, nil, openapi.DefaultLocaleBundleReader{})
+		lockerSvc       = locker.New()
+		sessionStore    = session.NewDBStore()
+		capabilitySvc   = injectedCapabilities
+		integrationHook = &testIntegrationDelegateProvider{}
+		dependencySvc   = plugindep.New()
 	)
-	hostLockSvc := mustNewHostLockServiceForTest(lockerSvc)
-
-	catalogSvc.SetBackendLoader(integrationSvc)
-	catalogSvc.SetArtifactParser(runtimeSvc)
-	catalogSvc.SetDynamicManifestLoader(runtimeSvc)
-	catalogSvc.SetNodeStateSyncer(runtimeSvc)
-	catalogSvc.SetMenuSyncer(integrationSvc)
-	catalogSvc.SetResourceRefSyncer(integrationSvc)
-	catalogSvc.SetReleaseStateSyncer(runtimeSvc)
-	catalogSvc.SetHookDispatcher(integrationSvc)
-
-	lifecycleSvc.SetReconciler(runtimeSvc)
-	lifecycleSvc.SetTopology(topology)
-
-	integrationSvc.SetBizCtxProvider(&bizCtxAdapter{svc: bizCtxProvider})
-	integrationSvc.SetDynamicCronExecutor(runtimeSvc)
-	integrationSvc.SetCapabilities(capabilitySvc)
-	integrationSvc.SetTopologyProvider(topology)
-
-	runtimeSvc.SetMenuManager(integrationSvc)
-	runtimeSvc.SetHookDispatcher(integrationSvc)
-	runtimeSvc.SetPermissionMenuFilter(integrationSvc)
-	runtimeSvc.SetJwtConfigProvider(&jwtConfigAdapter{svc: configProvider})
-	runtimeSvc.SetUploadSizeProvider(&uploadSizeAdapter{svc: configProvider})
-	runtimeSvc.SetUserContextSetter(&userCtxAdapter{svc: bizCtxProvider})
-	runtimeSvc.SetTopology(topology)
-	runtimeSvc.SetSessionStore(sessionStore)
-	runtimeSvc.SetRuntimeCacheChangeNotifier(runtimeCacheChangeNotifier{})
-	runtimeSvc.SetDependencyValidator(runtimeDependencyValidator{})
-
-	mustConfigureWasmHostServicesForTest(
-		kvCacheSvc,
-		hostLockSvc,
-		notifySvc,
-		configProvider,
+	orgSvc := orgspi.New(nil, nil)
+	tenantSvc := tenantspi.New(nil, nil, bizCtxProvider)
+	roleSvc := role.New(integrationHook, bizCtxProvider, configProvider, i18nService, orgSvc, tenantSvc)
+	if capabilitySvc == nil {
+		capabilitySvc = newTestCapabilities(bizCtxProvider)
+	}
+	uploadSize := injectedUploadSize
+	if uploadSize == nil {
+		uploadSize = &uploadSizeAdapter{svc: configProvider}
+	}
+	wasmRuntime, err := wasm.NewRuntime(
 		capabilitySvc,
 		capabilityconfig.NewConfigFactory("", ""),
 		capabilityhostconfig.New(mustHostConfigRawReader(configProvider)),
 		capabilitymanifest.NewFactory(""),
 	)
+	if err != nil {
+		panic(fmt.Sprintf("create test wasm runtime: %v", err))
+	}
+	runtimeSvc := runtime.New(
+		catalogSvc,
+		storeSvc,
+		migrationSvc,
+		frontendSvc,
+		openapiSvc,
+		i18nService,
+		lockerSvc,
+		topology,
+		integrationHook,
+		integrationHook,
+		integrationHook,
+		&jwtConfigAdapter{svc: configProvider},
+		uploadSize,
+		&userCtxAdapter{svc: bizCtxProvider},
+		sessionStore,
+		roleSvc,
+		integrationHook,
+		runtimeCacheChangeNotifier{},
+		runtimeDependencyValidator{},
+		testStorageCleanupProvider{capabilities: capabilitySvc},
+		wasmRuntime,
+	)
+	dynamicJobExecutor := injectedDynamicJobExecutor
+	if dynamicJobExecutor == nil {
+		dynamicJobExecutor = runtimeSvc
+	}
+	integrationSvc := integration.New(
+		catalogSvc,
+		storeSvc,
+		&bizCtxAdapter{svc: bizCtxProvider},
+		topology,
+		testSourceServicesProvider{capabilities: capabilitySvc},
+		capabilitySvc.Org(),
+		dynamicJobExecutor,
+		integration.NewSharedState(),
+	)
+	integrationHook.service = integrationSvc
+	lifecycleSvc := lifecycle.New(
+		catalogSvc,
+		storeSvc,
+		runtimeSvc,
+		integrationSvc,
+		migrationSvc,
+		dependencySvc,
+		i18nService,
+		runtimeCacheChangeNotifier{},
+		topology,
+		nil,
+		testSourceServicesProvider{capabilities: capabilitySvc},
+	)
+	upgradeSvc, err := upgrade.New(
+		catalogSvc,
+		storeSvc,
+		lifecycleSvc,
+		runtimeSvc,
+		integrationSvc,
+		migrationSvc,
+		dependencySvc,
+		i18nService,
+		nil,
+		runtimeCacheChangeNotifier{},
+		runtimeCacheFreshener{},
+		upgradeTopologyAdapter{topology: topology},
+		configProvider,
+	)
+	if err != nil {
+		panic(fmt.Sprintf("create test upgrade service: %v", err))
+	}
 
 	return &Services{
 		Catalog:     catalogSvc,
+		Store:       storeSvc,
 		Lifecycle:   lifecycleSvc,
+		Migration:   migrationSvc,
 		Runtime:     runtimeSvc,
 		Frontend:    frontendSvc,
 		Integration: integrationSvc,
 		OpenAPI:     openapiSvc,
+		Upgrade:     upgradeSvc,
 	}
+}
+
+// testSourceServicesProvider returns source-plugin service directories scoped by plugin ID.
+type testSourceServicesProvider struct {
+	capabilities capability.Services
+}
+
+// SourceServicesForPlugin returns plugin-scoped services for source-plugin callbacks.
+func (p testSourceServicesProvider) SourceServicesForPlugin(pluginID string) pluginhost.Services {
+	if p.capabilities == nil {
+		return nil
+	}
+	services := capability.ServicesForPlugin(p.capabilities, pluginID)
+	sourceServices, _ := services.(pluginhost.Services)
+	return sourceServices
 }
 
 // mustHostConfigRawReader returns the raw host-config reader implemented by
@@ -184,6 +304,26 @@ func (runtimeCacheChangeNotifier) MarkRuntimeCacheChanged(context.Context, strin
 	return nil
 }
 
+// PublishPluginChange accepts one plugin-scoped runtime cache change without
+// publishing cross-node notifications in package tests.
+func (runtimeCacheChangeNotifier) PublishPluginChange(context.Context, string, string, string) error {
+	return nil
+}
+
+// SyncEnabledSnapshotAndPublishRuntimeChange accepts one local snapshot refresh
+// request without publishing cross-node notifications in package tests.
+func (runtimeCacheChangeNotifier) SyncEnabledSnapshotAndPublishRuntimeChange(context.Context, string, string) error {
+	return nil
+}
+
+// runtimeCacheFreshener is a no-op cache freshness checker for isolated plugin tests.
+type runtimeCacheFreshener struct{}
+
+// EnsureRuntimeCacheFresh accepts runtime cache freshness checks in package tests.
+func (runtimeCacheFreshener) EnsureRuntimeCacheFresh(context.Context) error {
+	return nil
+}
+
 // runtimeDependencyValidator is a no-op dynamic dependency validator for
 // isolated plugin runtime tests.
 type runtimeDependencyValidator struct{}
@@ -194,48 +334,84 @@ func (runtimeDependencyValidator) ValidateDynamicPluginCandidate(context.Context
 	return nil
 }
 
-// mustNewHostLockServiceForTest creates the host-lock dependency used by wasm
-// bridge tests. A failure means the fixture wiring is invalid.
-func mustNewHostLockServiceForTest(lockerSvc locker.Service) hostlock.Service {
-	service, err := hostlock.New(lockerSvc)
-	if err != nil {
-		panic(fmt.Sprintf("configure test host lock service: %v", err))
-	}
-	return service
+// ValidateSourcePluginUpgradeCandidate accepts source upgrade candidates without
+// consulting the root plugin facade in package tests.
+func (runtimeDependencyValidator) ValidateSourcePluginUpgradeCandidate(context.Context, *catalog.Manifest) error {
+	return nil
 }
 
-// mustConfigureWasmHostServicesForTest mirrors the HTTP startup host-service
-// wiring so runtime package tests are self-contained and order independent.
-func mustConfigureWasmHostServicesForTest(
-	kvCacheSvc kvcache.Service,
-	hostLockSvc hostlock.Service,
-	notifySvc notify.Service,
-	configProvider configsvc.Service,
-	hostServices capability.Services,
-	configFactory plugincap.ConfigServiceFactory,
-	hostConfigSvc hostconfigcap.Service,
-	manifestFactory manifestcap.ServiceFactory,
-) {
-	configure := []struct {
-		name string
-		fn   func() error
-	}{
-		{name: "cache", fn: func() error { return wasm.ConfigureCacheHostService(kvCacheSvc) }},
-		{name: "lock", fn: func() error { return wasm.ConfigureLockHostService(hostLockSvc) }},
-		{name: "notify", fn: func() error { return wasm.ConfigureNotifyHostService(notifySvc) }},
-		{name: "storage", fn: func() error { return wasm.ConfigureStorageHostService(configProvider) }},
-		{name: "ai", fn: func() error { return wasm.ConfigureAITextHostService(hostServices) }},
-		{name: "org", fn: func() error { return wasm.ConfigureOrgHostService(hostServices) }},
-		{name: "tenant", fn: func() error { return wasm.ConfigureTenantHostService(hostServices) }},
-		{name: "config", fn: func() error { return wasm.ConfigureConfigHostService(configFactory) }},
-		{name: "host config", fn: func() error { return wasm.ConfigureHostConfigService(hostConfigSvc) }},
-		{name: "manifest", fn: func() error { return wasm.ConfigureManifestHostService(manifestFactory) }},
+// testIntegrationDelegateProvider bridges runtime tests to integration side
+// effects without duplicating production setter wiring.
+type testIntegrationDelegateProvider struct {
+	service integration.Service
+}
+
+// SyncPluginMenusAndPermissions delegates full menu and permission sync.
+func (p *testIntegrationDelegateProvider) SyncPluginMenusAndPermissions(ctx context.Context, manifest *catalog.Manifest) error {
+	if p == nil || p.service == nil {
+		return nil
 	}
-	for _, item := range configure {
-		if err := item.fn(); err != nil {
-			panic(fmt.Sprintf("configure test wasm %s host service: %v", item.name, err))
-		}
+	return p.service.SyncPluginMenusAndPermissions(ctx, manifest)
+}
+
+// SyncPluginMenus delegates manifest menu sync.
+func (p *testIntegrationDelegateProvider) SyncPluginMenus(ctx context.Context, manifest *catalog.Manifest) error {
+	if p == nil || p.service == nil {
+		return nil
 	}
+	return p.service.SyncPluginMenus(ctx, manifest)
+}
+
+// DeletePluginMenusByManifest delegates plugin menu deletion.
+func (p *testIntegrationDelegateProvider) DeletePluginMenusByManifest(ctx context.Context, manifest *catalog.Manifest) error {
+	if p == nil || p.service == nil {
+		return nil
+	}
+	return p.service.DeletePluginMenusByManifest(ctx, manifest)
+}
+
+// SyncPluginResourceReferences delegates resource reference synchronization.
+func (p *testIntegrationDelegateProvider) SyncPluginResourceReferences(ctx context.Context, manifest *catalog.Manifest) error {
+	if p == nil || p.service == nil {
+		return nil
+	}
+	return p.service.SyncPluginResourceReferences(ctx, manifest)
+}
+
+// DispatchPluginHookEvent delegates lifecycle hook dispatch.
+func (p *testIntegrationDelegateProvider) DispatchPluginHookEvent(
+	ctx context.Context,
+	event pluginhost.ExtensionPoint,
+	values map[string]interface{},
+) error {
+	if p == nil || p.service == nil {
+		return nil
+	}
+	return p.service.DispatchPluginHookEvent(ctx, event, values)
+}
+
+// FilterPermissionMenus delegates permission menu filtering.
+func (p *testIntegrationDelegateProvider) FilterPermissionMenus(ctx context.Context, menus []*entity.SysMenu) []*entity.SysMenu {
+	if p == nil || p.service == nil {
+		return menus
+	}
+	return p.service.FilterPermissionMenus(ctx, menus)
+}
+
+// CanExposeBusinessEntries delegates business entry visibility checks.
+func (p *testIntegrationDelegateProvider) CanExposeBusinessEntries(ctx context.Context, pluginID string) bool {
+	return p == nil || p.service == nil || p.service.CanExposeBusinessEntries(ctx, pluginID)
+}
+
+// testStorageCleanupProvider returns the capability directory used by storage
+// cleanup in runtime uninstall tests.
+type testStorageCleanupProvider struct {
+	capabilities capability.Services
+}
+
+// StorageCleanupServices returns the test capability directory.
+func (p testStorageCleanupProvider) StorageCleanupServices() capability.Services {
+	return p.capabilities
 }
 
 // testCapabilities publishes the minimal capability services needed by
@@ -257,12 +433,16 @@ type testCapabilities struct {
 	bizCtx bizctxcap.Service
 	// cache exposes a registration-safe no-op cache service to source plugins.
 	cache cachecap.Service
+	// lock exposes a registration-safe no-op lock service to source plugins.
+	lock lockcap.Service
 	// hostConfig exposes registration-safe host configuration defaults.
 	hostConfig hostconfigcap.Service
 	// tenantFilter exposes a registration-safe tenant filter.
-	tenantFilter tenantcap.PluginTableFilterService
+	tenantFilter tenantspi.PluginTableFilterService
 	// users exposes a registration-safe user-domain capability.
 	users capabilityusercap.Service
+	// storage exposes a registration-safe no-op storage service to source plugins.
+	storage storagecap.Service
 	// pluginID scopes source-plugin capabilities when non-empty.
 	pluginID string
 }
@@ -284,9 +464,11 @@ func newTestCapabilities(bizCtxSvc bizctxcap.Service) capability.Services {
 		plugins:         testPluginsService{},
 		bizCtx:          bizCtxSvc,
 		cache:           testCacheService{},
+		lock:            testLockService{},
 		hostConfig:      testHostConfigService{},
 		tenantFilter:    testTenantFilterService{},
 		users:           testUsersService{},
+		storage:         newTestStorageService(),
 	}
 }
 
@@ -311,7 +493,7 @@ func (s *testCapabilities) Admin() capability.AdminServices {
 
 // AI returns the default AI capability fallback namespace.
 func (s *testCapabilities) AI() capabilityai.Service {
-	return capabilityai.New(capabilityaitext.New(nil))
+	return capabilityai.New(capabilityaitext.New(nil, nil))
 }
 
 // Users returns an empty user-domain service for plugin integration tests.
@@ -346,11 +528,6 @@ func (s *testCapabilities) PluginConfig() plugincap.ConfigService {
 	return s.configFactory.ForPlugin(s.pluginID)
 }
 
-// Config returns an empty runtime-config domain service for plugin integration tests.
-func (s *testCapabilities) Config() capabilityconfigcap.Service {
-	return testNoopRuntimeConfig{}
-}
-
 // Dict returns the registration-safe dictionary-domain service.
 func (s *testCapabilities) Dict() capabilitydictcap.Service {
 	if s == nil {
@@ -376,9 +553,11 @@ func (s *testCapabilities) ForPlugin(pluginID string) capability.Services {
 		plugins:         s.plugins,
 		bizCtx:          s.bizCtx,
 		cache:           s.cache,
+		lock:            s.lock,
 		hostConfig:      s.hostConfig,
 		tenantFilter:    s.tenantFilter,
 		users:           s.users,
+		storage:         s.storage,
 		pluginID:        pluginID,
 	}
 }
@@ -400,6 +579,14 @@ func (s *testCapabilities) Infra() capabilityinfracap.Service { return testNoopI
 // Jobs returns an empty scheduled-job domain service for plugin integration tests.
 func (s *testCapabilities) Jobs() capabilityjobcap.Service { return testNoopJobs{} }
 
+// Lock returns the registration-safe lock service for plugin integration tests.
+func (s *testCapabilities) Lock() lockcap.Service {
+	if s == nil {
+		return nil
+	}
+	return s.lock
+}
+
 // Manifest returns the plugin-scoped manifest service for plugin integration tests.
 func (s *testCapabilities) Manifest() manifestcap.Service {
 	if s == nil || s.manifestFactory == nil {
@@ -415,7 +602,7 @@ func (s *testCapabilities) Notifications() capabilitynotifycap.Service {
 
 // Org returns the default organization capability fallback service.
 func (s *testCapabilities) Org() capabilityorgcap.Service {
-	return capabilityorgcap.New(nil)
+	return orgspi.New(nil, nil)
 }
 
 // Plugins returns the registration-safe plugin-governance domain service.
@@ -440,8 +627,16 @@ func (s *testCapabilities) Route() routecap.Service { return testNoopRoute{} }
 // Sessions returns an empty online-session domain service for plugin integration tests.
 func (s *testCapabilities) Sessions() capabilitysessioncap.Service { return testNoopSessions{} }
 
+// Storage returns the registration-safe storage service for plugin integration tests.
+func (s *testCapabilities) Storage() storagecap.Service {
+	if s == nil {
+		return nil
+	}
+	return s.storage
+}
+
 // TenantFilter returns the registration-safe tenant filter for plugin integration tests.
-func (s *testCapabilities) TenantFilter() tenantcap.PluginTableFilterService {
+func (s *testCapabilities) TenantFilter() tenantspi.PluginTableFilterService {
 	if s == nil {
 		return nil
 	}
@@ -449,8 +644,8 @@ func (s *testCapabilities) TenantFilter() tenantcap.PluginTableFilterService {
 }
 
 // Tenant returns the default tenant capability fallback service.
-func (s *testCapabilities) Tenant() tenantcapsvc.Service {
-	return tenantcapsvc.New(nil, nil)
+func (s *testCapabilities) Tenant() tenantcap.Service {
+	return tenantspi.New(nil, nil, nil)
 }
 
 // testHostConfigService returns deterministic host configuration values needed
@@ -553,6 +748,147 @@ func (testCacheService) Expire(context.Context, string, string, time.Duration) (
 	return false, nil, nil
 }
 
+// testLockService is a no-op lock fixture for registration-only tests.
+type testLockService struct{}
+
+// Acquire returns a successful isolated ticket without touching shared lock state.
+func (testLockService) Acquire(_ context.Context, in lockcap.AcquireInput) (*lockcap.AcquireOutput, error) {
+	expireAt := time.Now().Add(lockcap.DefaultLease)
+	return &lockcap.AcquireOutput{Acquired: true, Ticket: "test-ticket:" + in.Name, ExpireAt: &expireAt}, nil
+}
+
+// Renew extends the isolated test ticket without touching shared lock state.
+func (testLockService) Renew(context.Context, lockcap.RenewInput) (*lockcap.RenewOutput, error) {
+	expireAt := time.Now().Add(lockcap.DefaultLease)
+	return &lockcap.RenewOutput{ExpireAt: &expireAt}, nil
+}
+
+// Release accepts the isolated test ticket without touching shared lock state.
+func (testLockService) Release(context.Context, lockcap.ReleaseInput) error {
+	return nil
+}
+
+// testStorageService is an in-memory storage fixture used by dynamic runtime tests.
+type testStorageService struct {
+	mu      sync.Mutex
+	objects map[string]*testStorageObject
+}
+
+type testStorageObject struct {
+	body        []byte
+	contentType string
+}
+
+func newTestStorageService() *testStorageService {
+	return &testStorageService{objects: make(map[string]*testStorageObject)}
+}
+
+// Put stores one object in memory and returns plugin-visible metadata.
+func (s *testStorageService) Put(_ context.Context, in storagecap.PutInput) (*storagecap.PutOutput, error) {
+	body, err := io.ReadAll(in.Body)
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureObjects()
+	s.objects[in.Path] = &testStorageObject{
+		body:        append([]byte(nil), body...),
+		contentType: strings.TrimSpace(in.ContentType),
+	}
+	return &storagecap.PutOutput{Object: s.objectLocked(in.Path)}, nil
+}
+
+// Get reads one object from memory.
+func (s *testStorageService) Get(_ context.Context, in storagecap.GetInput) (*storagecap.GetOutput, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureObjects()
+	object, ok := s.objects[in.Path]
+	if !ok {
+		return &storagecap.GetOutput{Found: false}, nil
+	}
+	return &storagecap.GetOutput{
+		Object: s.objectLocked(in.Path),
+		Body:   io.NopCloser(bytes.NewReader(append([]byte(nil), object.body...))),
+		Found:  true,
+	}, nil
+}
+
+// Delete removes one object from memory.
+func (s *testStorageService) Delete(_ context.Context, in storagecap.DeleteInput) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureObjects()
+	delete(s.objects, in.Path)
+	return nil
+}
+
+// List returns a bounded in-memory object list.
+func (s *testStorageService) List(_ context.Context, in storagecap.ListInput) (*storagecap.ListOutput, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureObjects()
+	limit := in.Limit
+	if limit <= 0 {
+		limit = storagecap.DefaultListLimit
+	}
+	if limit > storagecap.MaxListLimit {
+		limit = storagecap.MaxListLimit
+	}
+	prefix := strings.TrimSuffix(strings.TrimSpace(in.Prefix), "/")
+	keys := make([]string, 0, len(s.objects))
+	for key := range s.objects {
+		if key == prefix || strings.HasPrefix(key, prefix+"/") {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	if len(keys) > limit {
+		keys = keys[:limit]
+	}
+	objects := make([]*storagecap.Object, 0, len(keys))
+	for _, key := range keys {
+		objects = append(objects, s.objectLocked(key))
+	}
+	return &storagecap.ListOutput{Objects: objects, Limit: limit}, nil
+}
+
+// Stat reads one in-memory object metadata snapshot.
+func (s *testStorageService) Stat(_ context.Context, in storagecap.StatInput) (*storagecap.StatOutput, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureObjects()
+	if _, ok := s.objects[in.Path]; !ok {
+		return &storagecap.StatOutput{Found: false}, nil
+	}
+	return &storagecap.StatOutput{Object: s.objectLocked(in.Path), Found: true}, nil
+}
+
+// ProviderStatuses returns no provider diagnostics for registration-only tests.
+func (*testStorageService) ProviderStatuses(context.Context) ([]*storagecap.ProviderStatus, error) {
+	return []*storagecap.ProviderStatus{}, nil
+}
+
+func (s *testStorageService) ensureObjects() {
+	if s.objects == nil {
+		s.objects = make(map[string]*testStorageObject)
+	}
+}
+
+func (s *testStorageService) objectLocked(path string) *storagecap.Object {
+	object := s.objects[path]
+	if object == nil {
+		return nil
+	}
+	return &storagecap.Object{
+		Path:        path,
+		Size:        int64(len(object.body)),
+		ContentType: object.contentType,
+		Visibility:  storagecap.VisibilityPrivate,
+	}
+}
+
 // testDictService is an empty dictionary fixture for registration-only tests.
 type testDictService struct{}
 
@@ -580,8 +916,8 @@ func (testDictService) ResolveLabels(_ context.Context, _ capmodel.CapabilityCon
 type testTenantFilterService struct{}
 
 // Context returns a platform-bypass tenant context for registration-only tests.
-func (testTenantFilterService) Context(context.Context) tenantcap.TenantFilterContext {
-	return tenantcap.TenantFilterContext{PlatformBypass: true}
+func (testTenantFilterService) Context(context.Context) tenantspi.TenantFilterContext {
+	return tenantspi.TenantFilterContext{PlatformBypass: true}
 }
 
 // Apply returns the model unchanged because registration-only tests never query plugin tables.
@@ -592,8 +928,8 @@ func (testTenantFilterService) Apply(_ context.Context, model *gdb.Model, _ stri
 // testPluginsService is an empty plugin-governance fixture for registration-only tests.
 type testPluginsService struct{}
 
-// BatchGetPlugins returns all requested plugin IDs as opaque missing records.
-func (testPluginsService) BatchGetPlugins(_ context.Context, _ capmodel.CapabilityContext, ids []capabilityplugincap.PluginID) (*capmodel.BatchResult[*capabilityplugincap.Projection, capabilityplugincap.PluginID], error) {
+// BatchGet returns all requested plugin IDs as opaque missing records.
+func (testPluginsService) BatchGet(_ context.Context, _ capmodel.CapabilityContext, ids []capabilityplugincap.PluginID) (*capmodel.BatchResult[*capabilityplugincap.Projection, capabilityplugincap.PluginID], error) {
 	return &capmodel.BatchResult[*capabilityplugincap.Projection, capabilityplugincap.PluginID]{
 		Items:      map[capabilityplugincap.PluginID]*capabilityplugincap.Projection{},
 		MissingIDs: append([]capabilityplugincap.PluginID(nil), ids...),
@@ -660,8 +996,8 @@ func (testPluginConfigService) Duration(_ context.Context, _ string, defaultValu
 // testPluginAdminService is a no-op plugin-governance admin fixture.
 type testPluginAdminService struct{}
 
-// SetPluginEnabled accepts enablement changes without mutating test state.
-func (testPluginAdminService) SetPluginEnabled(context.Context, capmodel.CapabilityContext, capabilityplugincap.PluginID, bool) error {
+// SetEnabled accepts enablement changes without mutating test state.
+func (testPluginAdminService) SetEnabled(context.Context, capmodel.CapabilityContext, capabilityplugincap.PluginID, bool) error {
 	return nil
 }
 
@@ -688,8 +1024,8 @@ func (testAdminServices) Files() capabilityfilecap.AdminService { return testNoo
 // Sessions returns no-op session management commands for registration-only tests.
 func (testAdminServices) Sessions() capabilitysessioncap.AdminService { return testNoopSessions{} }
 
-// Config returns no-op runtime-config management commands for registration-only tests.
-func (testAdminServices) Config() capabilityconfigcap.AdminService { return testNoopRuntimeConfig{} }
+// HostConfig returns no-op runtime host-configuration management commands for registration-only tests.
+func (testAdminServices) HostConfig() hostconfigcap.AdminService { return testNoopRuntimeConfig{} }
 
 // Notifications returns no-op notification management commands for registration-only tests.
 func (testAdminServices) Notifications() capabilitynotifycap.AdminService {
@@ -710,21 +1046,21 @@ func (testAdminServices) Infra() capabilityinfracap.AdminService { return testNo
 // testUsersService is an empty user-domain fixture for registration-only tests.
 type testUsersService struct{}
 
-// BatchGetUsers returns all requested user IDs as opaque missing records.
-func (testUsersService) BatchGetUsers(_ context.Context, _ capmodel.CapabilityContext, ids []capabilityusercap.UserID) (*capmodel.BatchResult[*capabilityusercap.UserProjection, capabilityusercap.UserID], error) {
+// BatchGet returns all requested user IDs as opaque missing records.
+func (testUsersService) BatchGet(_ context.Context, _ capmodel.CapabilityContext, ids []capabilityusercap.UserID) (*capmodel.BatchResult[*capabilityusercap.UserProjection, capabilityusercap.UserID], error) {
 	return &capmodel.BatchResult[*capabilityusercap.UserProjection, capabilityusercap.UserID]{
 		Items:      map[capabilityusercap.UserID]*capabilityusercap.UserProjection{},
 		MissingIDs: append([]capabilityusercap.UserID(nil), ids...),
 	}, nil
 }
 
-// SearchUsers returns an empty page because registration-only tests never query users.
-func (testUsersService) SearchUsers(context.Context, capmodel.CapabilityContext, capabilityusercap.SearchInput) (*capmodel.PageResult[*capabilityusercap.UserProjection], error) {
+// Search returns an empty page because registration-only tests never query users.
+func (testUsersService) Search(context.Context, capmodel.CapabilityContext, capabilityusercap.SearchInput) (*capmodel.PageResult[*capabilityusercap.UserProjection], error) {
 	return &capmodel.PageResult[*capabilityusercap.UserProjection]{Items: []*capabilityusercap.UserProjection{}}, nil
 }
 
-// EnsureUsersVisible accepts all users because registration-only tests never execute route handlers.
-func (testUsersService) EnsureUsersVisible(context.Context, capmodel.CapabilityContext, []capabilityusercap.UserID) error {
+// EnsureVisible accepts all users because registration-only tests never execute route handlers.
+func (testUsersService) EnsureVisible(context.Context, capmodel.CapabilityContext, []capabilityusercap.UserID) error {
 	return nil
 }
 

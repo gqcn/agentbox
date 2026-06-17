@@ -30,6 +30,9 @@ const (
 
 // SendInput defines one governed notification request.
 type SendInput struct {
+	// ChannelKey is the governed notification channel key authorized for this send.
+	// Empty means adapters may use the built-in inbox channel when appropriate.
+	ChannelKey string
 	// Recipients contains target user domain IDs.
 	Recipients []string
 	// SourceType is the originating business source type.
@@ -42,6 +45,8 @@ type SendInput struct {
 	Content string
 	// Category is the plugin or host notification category.
 	Category CategoryCode
+	// Payload carries optional metadata stored with the notification.
+	Payload map[string]any
 	// SenderUserID is the optional sender user identifier. When zero, adapters
 	// may use the actor in CapabilityContext.
 	SenderUserID int64
@@ -55,24 +60,25 @@ type SendResult struct {
 	DeliveryCount int
 }
 
-// Service defines read-oriented notification capability methods.
+// Service defines notification capability methods available to plugins.
 type Service interface {
-	// BatchGetMessages returns visible message projections and opaque missing IDs.
-	BatchGetMessages(ctx context.Context, capCtx capmodel.CapabilityContext, ids []MessageID) (*capmodel.BatchResult[map[string]any, MessageID], error)
+	// BatchGet returns visible message projections and opaque missing IDs.
+	BatchGet(ctx context.Context, capCtx capmodel.CapabilityContext, ids []MessageID) (*capmodel.BatchResult[map[string]any, MessageID], error)
+	// Send sends one governed notification message.
+	Send(ctx context.Context, capCtx capmodel.CapabilityContext, input SendInput) (*SendResult, error)
 }
 
 // AdminService defines governed notification commands.
 type AdminService interface {
-	// Send sends one governed notification message.
-	Send(ctx context.Context, capCtx capmodel.CapabilityContext, input SendInput) (*SendResult, error)
-	// DeleteMessages removes visible notification messages.
-	DeleteMessages(ctx context.Context, capCtx capmodel.CapabilityContext, ids []MessageID) error
+	Service
+	// Delete removes visible notification messages.
+	Delete(ctx context.Context, capCtx capmodel.CapabilityContext, ids []MessageID) error
 	// DeleteBySource removes visible notifications for business source IDs.
 	DeleteBySource(ctx context.Context, capCtx capmodel.CapabilityContext, sourceType SourceType, sourceIDs []string) error
 }
 
 // ScopeService defines host-internal notification visibility helpers.
 type ScopeService interface {
-	// EnsureMessagesVisible rejects when any message is outside caller scope.
-	EnsureMessagesVisible(ctx context.Context, capCtx capmodel.CapabilityContext, ids []MessageID) error
+	// EnsureVisible rejects when any message is outside caller scope.
+	EnsureVisible(ctx context.Context, capCtx capmodel.CapabilityContext, ids []MessageID) error
 }

@@ -48,9 +48,6 @@ func validateHostServiceSpecs(specs []*HostServiceSpec, pluginID string) error {
 		}
 		seenServices[spec.Service] = struct{}{}
 
-		if len(spec.Methods) == 0 {
-			spec.Methods = defaultHostServiceMethods(spec.Service)
-		}
 		methodSeen := make(map[string]struct{}, len(spec.Methods))
 		methods := make([]string, 0, len(spec.Methods))
 		for _, rawMethod := range spec.Methods {
@@ -206,11 +203,15 @@ func validateHostServiceSpecs(specs []*HostServiceSpec, pluginID string) error {
 			return gerror.Newf("host service %s cannot declare keys", spec.Service)
 		}
 
-		if _, ok := hostServicesWithoutResources[spec.Service]; ok {
+		methodResourceKind := hostServiceResourceKindForMethods(spec.Service, spec.Methods)
+		if methodResourceKind == HostServiceResourceNone {
 			if len(spec.Resources) > 0 {
 				return gerror.Newf("host service %s cannot declare resources", spec.Service)
 			}
 			continue
+		}
+		if methodResourceKind != "" && methodResourceKind != HostServiceResourceRef {
+			return gerror.Newf("host service %s uses unsupported resource declaration kind: %s", spec.Service, methodResourceKind)
 		}
 		if len(spec.Resources) == 0 {
 			return gerror.Newf("host service %s must declare at least one resource", spec.Service)
@@ -225,22 +226,6 @@ func validateHostServiceSpecs(specs []*HostServiceSpec, pluginID string) error {
 				}
 				if err := validateNetworkURLPattern(resource.Ref); err != nil {
 					return gerror.Wrapf(err, "host service %s has invalid url", spec.Service)
-				}
-			}
-		}
-		if spec.Service == HostServiceAI {
-			for _, resource := range spec.Resources {
-				if resource == nil {
-					continue
-				}
-				if !strings.HasPrefix(resource.Ref, "purpose:") || strings.TrimSpace(strings.TrimPrefix(resource.Ref, "purpose:")) == "" {
-					return gerror.Newf("host service %s resource ref must use purpose:<name>: %s", spec.Service, resource.Ref)
-				}
-				if len(resource.AllowMethods) > 0 || len(resource.HeaderAllowList) > 0 || resource.TimeoutMs > 0 || resource.MaxBodyBytes > 0 {
-					return gerror.Newf("host service %s purpose resources only allow attributes: %s", spec.Service, resource.Ref)
-				}
-				if err := validateAIResourceAttributes(resource.Attributes); err != nil {
-					return gerror.Wrapf(err, "host service %s has invalid ai resource attributes", spec.Service)
 				}
 			}
 		}
@@ -293,88 +278,32 @@ func normalizePluginIDForTableNamespace(pluginID string) string {
 	return replacer.Replace(trimmed)
 }
 
-// validateAIResourceAttributes validates optional governance attributes on AI purpose resources.
-func validateAIResourceAttributes(attributes map[string]string) error {
-	for key, value := range attributes {
-		switch key {
-		case "defaultTier":
-			switch value {
-			case "", "basic", "standard", "advanced":
-			default:
-				return gerror.Newf("defaultTier must be basic, standard, or advanced: %s", value)
-			}
-		case "maxOutputTokens", "maxPayloadBytes", "maxInputAssets", "maxOutputAssets", "maxAssetBytes":
-			if err := validatePositiveIntegerAttribute(key, value); err != nil {
-				return err
-			}
-		case "allowOperation", "allowOperationCancel":
-			if err := validateBooleanAttribute(key, value); err != nil {
-				return err
-			}
-		case "allowedMimeTypes":
-			if err := validateMIMEListAttribute(value); err != nil {
-				return err
-			}
+// hostServiceResourceKindForMethods returns the resource shape required by the
+// declared methods. Mixed none+resource methods require resource declarations
+// only when at least one resource-bound method is present.
+func hostServiceResourceKindForMethods(service string, methods []string) HostServiceResourceKind {
+	methodResources := hostServiceMethodResourceMap[service]
+	if len(methodResources) == 0 {
+		if _, ok := hostServicesWithoutResources[service]; ok {
+			return HostServiceResourceNone
+		}
+		return ""
+	}
+	requiresResource := false
+	for _, rawMethod := range methods {
+		method := normalizeHostServiceMethod(rawMethod)
+		switch methodResources[method] {
+		case HostServiceResourceRef, HostServiceResourceReserved:
+			requiresResource = true
+		case HostServiceResourceNone, "":
 		default:
-			return gerror.Newf("unsupported ai resource attribute: %s", key)
+			return methodResources[method]
 		}
 	}
-	return nil
-}
-
-// validatePositiveIntegerAttribute checks string-encoded positive integer policy attributes.
-func validatePositiveIntegerAttribute(key string, value string) error {
-	if strings.TrimSpace(value) == "" {
-		return gerror.Newf("%s cannot be empty", key)
+	if requiresResource {
+		return HostServiceResourceRef
 	}
-	allZero := true
-	for _, r := range value {
-		if r < '0' || r > '9' {
-			return gerror.Newf("%s must be a positive integer: %s", key, value)
-		}
-		if r != '0' {
-			allZero = false
-		}
-	}
-	if allZero {
-		return gerror.Newf("%s must be greater than zero", key)
-	}
-	return nil
-}
-
-// validateBooleanAttribute checks string-encoded boolean policy attributes.
-func validateBooleanAttribute(key string, value string) error {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "true", "false":
-		return nil
-	default:
-		return gerror.Newf("%s must be true or false: %s", key, value)
-	}
-}
-
-// validateMIMEListAttribute checks comma-separated MIME type allow-list values.
-func validateMIMEListAttribute(value string) error {
-	if strings.TrimSpace(value) == "" {
-		return gerror.New("allowedMimeTypes cannot be empty")
-	}
-	for _, item := range strings.Split(value, ",") {
-		mimeType := strings.TrimSpace(item)
-		if mimeType == "" {
-			return gerror.New("allowedMimeTypes cannot contain empty entries")
-		}
-		if !strings.Contains(mimeType, "/") && mimeType != "*" {
-			return gerror.Newf("allowedMimeTypes contains invalid mime type: %s", mimeType)
-		}
-	}
-	return nil
-}
-
-// defaultHostServiceMethods returns service-specific default method grants.
-func defaultHostServiceMethods(service string) []string {
-	if methods := hostServiceDefaultMethods[service]; len(methods) > 0 {
-		return append([]string(nil), methods...)
-	}
-	return nil
+	return HostServiceResourceNone
 }
 
 // NormalizeHostServiceSpecs returns deep-cloned and normalized host service declarations.

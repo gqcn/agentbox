@@ -32,7 +32,7 @@ func (s *serviceImpl) ListRuntimeStates(ctx context.Context) (*RuntimeStateListO
 
 // PrewarmRuntimeFrontendBundles preloads frontend bundles for enabled dynamic plugins.
 func (s *serviceImpl) PrewarmRuntimeFrontendBundles(ctx context.Context) error {
-	readCtx, err := s.catalogSvc.WithStartupDataSnapshot(ctx)
+	readCtx, err := s.storeSvc.WithStartupDataSnapshot(ctx)
 	if err != nil {
 		return err
 	}
@@ -74,6 +74,15 @@ func (s *serviceImpl) ProjectDynamicRoutesToOpenAPI(ctx context.Context, paths g
 	return s.openapiSvc.ProjectDynamicRoutesToOpenAPI(ctx, paths)
 }
 
+// CurrentRevision returns the plugin-runtime cache revision used by derived
+// read-model caches that are constructed below the root facade.
+func (s *serviceImpl) CurrentRevision(ctx context.Context) (int64, error) {
+	if s == nil || s.runtimeCacheRevisionCtrl == nil {
+		return 0, nil
+	}
+	return s.runtimeCacheRevisionCtrl.CurrentRevision(ctx)
+}
+
 // BuildDynamicRoutePublicPath returns the host-visible public path for one
 // dynamic plugin route contract.
 func BuildDynamicRoutePublicPath(pluginID string, routePath string) string {
@@ -89,7 +98,11 @@ func (s *serviceImpl) UploadDynamicPackage(ctx context.Context, in *DynamicUploa
 	if err != nil {
 		return nil, err
 	}
-	if _, err = s.markRuntimeCacheChanged(ctx, "dynamic_package_uploaded"); err != nil {
+	if _, err = s.publishPluginChange(ctx, pluginChangePublishInput{
+		pluginID:   out.Id,
+		pluginType: out.Type,
+		reason:     "dynamic_package_uploaded",
+	}); err != nil {
 		return nil, err
 	}
 	return out, nil

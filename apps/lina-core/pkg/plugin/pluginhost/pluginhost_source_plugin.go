@@ -3,27 +3,38 @@
 
 package pluginhost
 
-import "io/fs"
+import (
+	"io/fs"
+
+	"lina-core/pkg/plugin/capability/aicap/aitext"
+	"lina-core/pkg/plugin/capability/orgcap/orgspi"
+	"lina-core/pkg/plugin/capability/tenantcap/tenantspi"
+)
 
 // sourcePlugin stores one compile-time source plugin definition behind the
-// published grouped SourcePlugin interfaces.
+// published grouped Declarations interface.
 type sourcePlugin struct {
 	// id is the stable plugin id and must match `plugin.yaml`.
 	id string
 	// assets exposes grouped asset registration helpers.
-	assets SourcePluginAssets
+	assets AssetDeclarations
 	// lifecycle exposes grouped lifecycle registration helpers.
-	lifecycle SourcePluginLifecycle
+	lifecycle LifecycleDeclarations
 	// hooks exposes grouped hook registration helpers.
-	hooks SourcePluginHooks
+	hooks HookDeclarations
 	// http exposes grouped HTTP registration helpers.
-	http SourcePluginHTTP
-	// cron exposes grouped cron registration helpers.
-	cron SourcePluginCron
-	// governance exposes grouped menu and permission governance helpers.
-	governance SourcePluginGovernance
+	http HTTPDeclarations
+	// jobs exposes grouped scheduled-job registration helpers.
+	jobs JobDeclarations
+	// providers exposes grouped framework provider declaration helpers.
+	providers ProviderDeclarations
+	// access exposes grouped menu and permission access-control helpers.
+	access AccessDeclarations
 
 	embeddedFiles     fs.FS
+	tenantProvider    tenantspi.ProviderFactory
+	orgProvider       orgspi.ProviderFactory
+	aiTextProvider    aitext.ProviderFactory
 	beforeInstall     SourcePluginBeforeLifecycleHandler
 	afterInstall      SourcePluginAfterLifecycleHandler
 	beforeUpgrade     SourcePluginBeforeUpgradeHandler
@@ -42,18 +53,18 @@ type sourcePlugin struct {
 	uninstallHandler  SourcePluginUninstallHandler
 	hookHandlers      []*HookHandlerRegistration
 	routeRegistrars   []*RouteHandlerRegistration
-	cronRegistrars    []*CronHandlerRegistration
+	jobRegistrars     []*JobHandlerRegistration
 	menuFilters       []*MenuFilterHandlerRegistration
 	permissionFilters []*PermissionFilterHandlerRegistration
 }
 
-// NewSourcePlugin creates and returns a new grouped source plugin definition.
-func NewSourcePlugin(id string) SourcePlugin {
+// NewDeclarations creates and returns a new grouped source-plugin declarations facade.
+func NewDeclarations(id string) Declarations {
 	plugin := &sourcePlugin{
 		id:                id,
 		hookHandlers:      make([]*HookHandlerRegistration, 0),
 		routeRegistrars:   make([]*RouteHandlerRegistration, 0),
-		cronRegistrars:    make([]*CronHandlerRegistration, 0),
+		jobRegistrars:     make([]*JobHandlerRegistration, 0),
 		menuFilters:       make([]*MenuFilterHandlerRegistration, 0),
 		permissionFilters: make([]*PermissionFilterHandlerRegistration, 0),
 	}
@@ -61,8 +72,9 @@ func NewSourcePlugin(id string) SourcePlugin {
 	plugin.lifecycle = &sourcePluginLifecycle{plugin: plugin}
 	plugin.hooks = &sourcePluginHooks{plugin: plugin}
 	plugin.http = &sourcePluginHTTP{plugin: plugin}
-	plugin.cron = &sourcePluginCron{plugin: plugin}
-	plugin.governance = &sourcePluginGovernance{plugin: plugin}
+	plugin.jobs = &sourcePluginJobs{plugin: plugin}
+	plugin.providers = &sourcePluginProviders{plugin: plugin}
+	plugin.access = &sourcePluginAccess{plugin: plugin}
 	return plugin
 }
 
@@ -102,13 +114,13 @@ func (p *sourcePlugin) GetRouteRegistrars() []*RouteHandlerRegistration {
 	return items
 }
 
-// GetCronRegistrars returns the registered cron contribution callbacks.
-func (p *sourcePlugin) GetCronRegistrars() []*CronHandlerRegistration {
+// GetJobRegistrars returns the registered scheduled-job contribution callbacks.
+func (p *sourcePlugin) GetJobRegistrars() []*JobHandlerRegistration {
 	if p == nil {
-		return []*CronHandlerRegistration{}
+		return []*JobHandlerRegistration{}
 	}
-	items := make([]*CronHandlerRegistration, len(p.cronRegistrars))
-	copy(items, p.cronRegistrars)
+	items := make([]*JobHandlerRegistration, len(p.jobRegistrars))
+	copy(items, p.jobRegistrars)
 	return items
 }
 
@@ -130,6 +142,30 @@ func (p *sourcePlugin) GetPermissionFilters() []*PermissionFilterHandlerRegistra
 	items := make([]*PermissionFilterHandlerRegistration, len(p.permissionFilters))
 	copy(items, p.permissionFilters)
 	return items
+}
+
+// GetTenantProviderFactory returns the declared tenant provider factory.
+func (p *sourcePlugin) GetTenantProviderFactory() tenantspi.ProviderFactory {
+	if p == nil {
+		return nil
+	}
+	return p.tenantProvider
+}
+
+// GetOrgProviderFactory returns the declared organization provider factory.
+func (p *sourcePlugin) GetOrgProviderFactory() orgspi.ProviderFactory {
+	if p == nil {
+		return nil
+	}
+	return p.orgProvider
+}
+
+// GetAITextProviderFactory returns the declared text AI provider factory.
+func (p *sourcePlugin) GetAITextProviderFactory() aitext.ProviderFactory {
+	if p == nil {
+		return nil
+	}
+	return p.aiTextProvider
 }
 
 // GetBeforeInstallHandler returns the registered source-plugin pre-install callback.

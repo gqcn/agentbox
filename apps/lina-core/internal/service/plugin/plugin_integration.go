@@ -1,21 +1,69 @@
-// This file exposes host integration methods on the root plugin facade.
+// This file exposes host integration and hook dispatch methods on the root
+// plugin facade.
 
 package plugin
 
 import (
 	"context"
 
+	"github.com/gogf/gf/v2/errors/gerror"
 	"github.com/gogf/gf/v2/net/ghttp"
 
 	"lina-core/internal/model/entity"
 	"lina-core/internal/service/plugin/internal/integration"
 	"lina-core/pkg/plugin/capability"
 	aitextsvc "lina-core/pkg/plugin/capability/aicap/aitext"
-	orgcapsvc "lina-core/pkg/plugin/capability/orgcap"
-	"lina-core/pkg/plugin/capability/tenantcap"
-	tenantcapsvc "lina-core/pkg/plugin/capability/tenantcap"
+	"lina-core/pkg/plugin/capability/orgcap/orgspi"
+	"lina-core/pkg/plugin/capability/tenantcap/tenantspi"
 	"lina-core/pkg/plugin/pluginhost"
 )
+
+// English fallback messages published with host authentication lifecycle events.
+const (
+	// AuthEventMessageLoginSuccessful is the English fallback for successful login messages.
+	AuthEventMessageLoginSuccessful = "Login successful"
+	// AuthEventMessageLoginFailed is the English fallback for generic failed login messages.
+	AuthEventMessageLoginFailed = "Login failed"
+	// AuthEventMessageLogoutSuccessful is the English fallback for successful logout messages.
+	AuthEventMessageLogoutSuccessful = "Logout successful"
+	// AuthEventMessageInvalidCredentials is the English fallback for invalid credential messages.
+	AuthEventMessageInvalidCredentials = "Invalid username or password"
+	// AuthEventMessageUserDisabled is the English fallback for disabled account messages.
+	AuthEventMessageUserDisabled = "User account is disabled"
+	// AuthEventMessageIPBlacklisted is the English fallback for blocked login IP messages.
+	AuthEventMessageIPBlacklisted = "Login IP is blacklisted"
+)
+
+// sourceServicesProvider stores the startup-owned capability directory and
+// returns plugin-scoped source-plugin service views for integration callbacks.
+type sourceServicesProvider struct {
+	capabilities capability.Services
+}
+
+// SourceServicesForPlugin returns a plugin-scoped source-plugin service view.
+func (p *sourceServicesProvider) SourceServicesForPlugin(pluginID string) pluginhost.Services {
+	if p == nil {
+		return nil
+	}
+	capabilities := p.capabilities
+	if capabilities == nil {
+		return nil
+	}
+	services := capability.ServicesForPlugin(capabilities, pluginID)
+	if sourceServices, ok := services.(pluginhost.Services); ok {
+		return sourceServices
+	}
+	return nil
+}
+
+// StorageCleanupServices returns the startup-owned shared capability directory
+// for runtime dynamic-plugin storage cleanup.
+func (p *sourceServicesProvider) StorageCleanupServices() capability.Services {
+	if p == nil {
+		return nil
+	}
+	return p.capabilities
+}
 
 // RegisterHTTPRoutes registers callback-contributed HTTP routes for source plugins.
 func (s *serviceImpl) RegisterHTTPRoutes(
@@ -32,18 +80,42 @@ func (s *serviceImpl) ListSourceRouteBindings() []pluginhost.SourceRouteBinding 
 	return s.integrationSvc.ListSourceRouteBindings()
 }
 
-// RegisterCrons registers callback-contributed cron jobs for source plugins.
-func (s *serviceImpl) RegisterCrons(ctx context.Context) error {
-	return s.integrationSvc.RegisterCrons(ctx)
+// RegisterJobs registers callback-contributed scheduled jobs for source plugins.
+func (s *serviceImpl) RegisterJobs(ctx context.Context) error {
+	return s.integrationSvc.RegisterJobs(ctx)
 }
 
-// SetCapabilities wires the host-published capability services used by plugins.
-func (s *serviceImpl) SetCapabilities(capabilities capability.Services) {
-	if s == nil || s.integrationSvc == nil {
-		return
-	}
-	s.capabilities = capabilities
-	s.integrationSvc.SetCapabilities(capabilities)
+// HandleAuthLoginSucceeded dispatches a login-succeeded hook to all enabled plugins.
+func (s *serviceImpl) HandleAuthLoginSucceeded(ctx context.Context, input pluginhost.AuthHookPayloadInput) error {
+	return s.dispatchAuthHookEvent(
+		ctx,
+		pluginhost.ExtensionPointAuthLoginSucceeded,
+		input,
+		pluginhost.AuthHookReasonLoginSuccessful,
+		AuthEventMessageLoginSuccessful,
+	)
+}
+
+// HandleAuthLoginFailed dispatches a login-failed hook to all enabled plugins.
+func (s *serviceImpl) HandleAuthLoginFailed(ctx context.Context, input pluginhost.AuthHookPayloadInput) error {
+	return s.dispatchAuthHookEvent(
+		ctx,
+		pluginhost.ExtensionPointAuthLoginFailed,
+		input,
+		pluginhost.AuthHookReasonLoginFailed,
+		AuthEventMessageLoginFailed,
+	)
+}
+
+// HandleAuthLogoutSucceeded dispatches a logout-succeeded hook to all enabled plugins.
+func (s *serviceImpl) HandleAuthLogoutSucceeded(ctx context.Context, input pluginhost.AuthHookPayloadInput) error {
+	return s.dispatchAuthHookEvent(
+		ctx,
+		pluginhost.ExtensionPointAuthLogoutSucceeded,
+		input,
+		pluginhost.AuthHookReasonLogoutSuccessful,
+		AuthEventMessageLogoutSuccessful,
+	)
 }
 
 // AITextProviderEnv returns typed, plugin-scoped text AI provider construction inputs.
@@ -62,8 +134,8 @@ func (s *serviceImpl) AITextProviderEnv(pluginID string) aitextsvc.ProviderEnv {
 }
 
 // OrgProviderEnv returns typed, plugin-scoped organization-provider construction inputs.
-func (s *serviceImpl) OrgProviderEnv(pluginID string) orgcapsvc.ProviderEnv {
-	env := orgcapsvc.ProviderEnv{PluginID: pluginID}
+func (s *serviceImpl) OrgProviderEnv(pluginID string) orgspi.ProviderEnv {
+	env := orgspi.ProviderEnv{PluginID: pluginID}
 	if s == nil || s.capabilities == nil {
 		return env
 	}
@@ -72,7 +144,7 @@ func (s *serviceImpl) OrgProviderEnv(pluginID string) orgcapsvc.ProviderEnv {
 		return env
 	}
 	sourceServices, ok := services.(interface {
-		TenantFilter() tenantcap.PluginTableFilterService
+		TenantFilter() tenantspi.PluginTableFilterService
 	})
 	if !ok {
 		return env
@@ -82,9 +154,49 @@ func (s *serviceImpl) OrgProviderEnv(pluginID string) orgcapsvc.ProviderEnv {
 	return env
 }
 
+// RegisterSourcePluginProviderFactories registers compile-time source-plugin
+// provider declarations into the startup-owned shared provider managers.
+func (s *serviceImpl) RegisterSourcePluginProviderFactories(
+	tenantManager *tenantspi.Manager,
+	orgManager *orgspi.Manager,
+	aiTextManager *aitextsvc.Manager,
+) error {
+	for _, definition := range pluginhost.ListSourcePlugins() {
+		if definition == nil {
+			continue
+		}
+		pluginID := definition.ID()
+		if factory := definition.GetTenantProviderFactory(); factory != nil {
+			if tenantManager == nil {
+				return gerror.New("plugin service requires tenant provider manager")
+			}
+			if err := tenantManager.RegisterFactory(pluginID, factory); err != nil {
+				return err
+			}
+		}
+		if factory := definition.GetOrgProviderFactory(); factory != nil {
+			if orgManager == nil {
+				return gerror.New("plugin service requires organization provider manager")
+			}
+			if err := orgManager.RegisterFactory(pluginID, factory); err != nil {
+				return err
+			}
+		}
+		if factory := definition.GetAITextProviderFactory(); factory != nil {
+			if aiTextManager == nil {
+				return gerror.New("plugin service requires text AI provider manager")
+			}
+			if err := aiTextManager.RegisterFactory(pluginID, factory); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // TenantProviderEnv returns typed, plugin-scoped tenant-provider construction inputs.
-func (s *serviceImpl) TenantProviderEnv(pluginID string) tenantcapsvc.ProviderEnv {
-	env := tenantcapsvc.ProviderEnv{PluginID: pluginID}
+func (s *serviceImpl) TenantProviderEnv(pluginID string) tenantspi.ProviderEnv {
+	env := tenantspi.ProviderEnv{PluginID: pluginID}
 	if s == nil || s.capabilities == nil {
 		return env
 	}
@@ -108,55 +220,55 @@ func (s *serviceImpl) TenantProviderEnv(pluginID string) tenantcapsvc.ProviderEn
 	return env
 }
 
-// ListExecutableCronJobs returns plugin-owned cron definitions whose handlers
+// ListExecutableJobs returns plugin-owned job definitions whose handlers
 // are safe to publish for execution. Dynamic plugins must be installed, enabled
 // for the current business-entry context, and free of runtime-upgrade blocking
 // states; declarations from disabled or preview-only dynamic plugins are
 // intentionally excluded. Use this method for executable handler publication,
 // not for authorization previews or scheduled-job table projection.
-func (s *serviceImpl) ListExecutableCronJobs(ctx context.Context) ([]ManagedCronJob, error) {
+func (s *serviceImpl) ListExecutableJobs(ctx context.Context) ([]ManagedJob, error) {
 	if err := s.ensureRuntimeCacheFresh(ctx); err != nil {
 		return nil, err
 	}
-	return s.integrationSvc.ListExecutableCronJobs(ctx)
+	return s.integrationSvc.ListExecutableJobs(ctx)
 }
 
-// ListExecutableCronJobsByPlugin returns executable plugin-owned cron
+// ListExecutableJobsByPlugin returns executable plugin-owned scheduled job
 // definitions for one plugin. The method applies the same runtime cache
 // freshness, install, enablement, and runtime-state checks as
-// ListExecutableCronJobs while narrowing discovery to pluginID. Job-handler
+// ListExecutableJobs while narrowing discovery to pluginID. Job-handler
 // lifecycle synchronization uses this path when an enabled plugin publishes its
 // concrete handler references.
-func (s *serviceImpl) ListExecutableCronJobsByPlugin(ctx context.Context, pluginID string) ([]ManagedCronJob, error) {
+func (s *serviceImpl) ListExecutableJobsByPlugin(ctx context.Context, pluginID string) ([]ManagedJob, error) {
 	if err := s.ensureRuntimeCacheFresh(ctx); err != nil {
 		return nil, err
 	}
-	return s.integrationSvc.ListExecutableCronJobsByPlugin(ctx, pluginID)
+	return s.integrationSvc.ListExecutableJobsByPlugin(ctx, pluginID)
 }
 
-// ListCronDeclarationsByPlugin returns plugin-owned cron declaration metadata
+// ListJobDeclarationsByPlugin returns plugin-owned job declaration metadata
 // for management review without requiring the plugin business entry to be
 // enabled. This path is used by plugin list and authorization-preview screens,
 // including before a dynamic plugin is installed. Returned items describe what
 // the plugin declares; callers must not treat them as proof that handlers can be
 // executed.
-func (s *serviceImpl) ListCronDeclarationsByPlugin(ctx context.Context, pluginID string) ([]ManagedCronJob, error) {
+func (s *serviceImpl) ListJobDeclarationsByPlugin(ctx context.Context, pluginID string) ([]ManagedJob, error) {
 	if err := s.ensureRuntimeCacheFresh(ctx); err != nil {
 		return nil, err
 	}
-	return s.integrationSvc.ListCronDeclarationsByPlugin(ctx, pluginID)
+	return s.integrationSvc.ListJobDeclarationsByPlugin(ctx, pluginID)
 }
 
-// ListInstalledCronDeclarations returns declared cron metadata for installed
+// ListInstalledJobDeclarations returns declared job metadata for installed
 // plugins without requiring their business entries to be enabled. Scheduled-job
 // projection uses this path so installed-but-disabled plugins can keep visible
 // task rows, while uninstalled authorization-preview declarations stay out of
 // the persistent task table.
-func (s *serviceImpl) ListInstalledCronDeclarations(ctx context.Context) ([]ManagedCronJob, error) {
+func (s *serviceImpl) ListInstalledJobDeclarations(ctx context.Context) ([]ManagedJob, error) {
 	if err := s.ensureRuntimeCacheFresh(ctx); err != nil {
 		return nil, err
 	}
-	return s.integrationSvc.ListInstalledCronDeclarations(ctx)
+	return s.integrationSvc.ListInstalledJobDeclarations(ctx)
 }
 
 // DispatchHookEvent dispatches one named hook event to all enabled plugins.
@@ -168,11 +280,45 @@ func (s *serviceImpl) DispatchHookEvent(
 	if err := s.ensureRuntimeCacheFresh(ctx); err != nil {
 		return err
 	}
-	readCtx, err := s.catalogSvc.WithStartupDataSnapshot(ctx)
+	readCtx, err := s.storeSvc.WithStartupDataSnapshot(ctx)
 	if err != nil {
 		return err
 	}
 	return s.integrationSvc.DispatchPluginHookEvent(readCtx, event, values)
+}
+
+// dispatchAuthHookEvent normalizes common auth payload reason and message
+// defaults before forwarding the event to the shared integration hook dispatcher.
+func (s *serviceImpl) dispatchAuthHookEvent(
+	ctx context.Context,
+	event pluginhost.ExtensionPoint,
+	input pluginhost.AuthHookPayloadInput,
+	defaultReason string,
+	defaultMessage string,
+) error {
+	if err := s.ensureRuntimeCacheFresh(ctx); err != nil {
+		return err
+	}
+	if input.Reason == "" {
+		input.Reason = defaultReason
+	}
+	if input.Message == "" {
+		input.Message = defaultMessage
+	}
+	return s.integrationSvc.DispatchPluginHookEvent(
+		ctx,
+		event,
+		pluginhost.BuildAuthHookPayloadValues(pluginhost.AuthHookPayloadInput{
+			UserName:   input.UserName,
+			Status:     input.Status,
+			IP:         input.IP,
+			ClientType: input.ClientType,
+			Browser:    input.Browser,
+			OS:         input.OS,
+			Message:    input.Message,
+			Reason:     input.Reason,
+		}),
+	)
 }
 
 // FilterMenus filters disabled plugin menus from the given menu list.

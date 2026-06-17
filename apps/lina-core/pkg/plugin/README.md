@@ -1,320 +1,188 @@
-# Plugin Package
+# LinaPro Plugin Public Contracts
 
-`apps/lina-core/pkg/plugin` is the public `Go` contract surface for the `Lina Core` plugin system. It keeps plugin-facing contracts in one place while runtime implementations, persistence, lifecycle orchestration, and workbench adapters stay behind host-owned services.
+`apps/lina-core/pkg/plugin` contains the stable plugin-facing contracts for `lina-core`. Source plugins, dynamic plugin guests, dynamic plugin builders, and host integration code should all use this public boundary. Host-owned orchestration and persistence implementations live under `apps/lina-core/internal/service/plugin`.
 
-The package has three main jobs:
+## Public Components
 
-- Publish stable host capability interfaces for source plugins and dynamic plugins.
-- Publish source-plugin registration contracts for routes, hooks, cron jobs, lifecycle callbacks, embedded assets, and governance filters.
-- Publish dynamic-plugin bridge contracts for `Wasm` route execution, guest runtime helpers, artifact metadata, and governed `hostServices` calls declared in `plugin.yaml`.
+| Component | Responsibility |
+| --- | --- |
+| `capability` | Defines the unified `capability.Services` directory and subpackage contracts such as users, files, i18n, jobs, AI, tenant, organization, storage, cache, and lock. Source plugins receive the full directory directly; dynamic plugins access only the published bridge-backed subset. Dynamic-plugin i18n resources are host-managed and no `i18n` host service is published. |
+| `pluginhost` | Defines source-plugin declaration-time contracts, runtime service access, lifecycle callbacks, hook registration, HTTP route contribution, scheduled job contribution, menu filtering, permission filtering, and hosted asset constants. |
+| `pluginbridge` | Provides the dynamic-plugin guest SDK. Guest code uses `pluginbridge.Declarations` during discovery or build flows and `pluginbridge.Services` at runtime. |
 
-## Boundary
+## Domain Capabilities
 
-This package is a contract boundary, not a business implementation layer. It must not expose host `DAO`, `DO`, `Entity`, raw `gdb.Model` builders to ordinary plugins, concrete workbench page structures, or host implementation packages.
+`capability.Services` is the runtime directory for host-owned domain capabilities. Source plugins consume these entries through `pluginhost.Services`; dynamic plugins declare the matching entries that are explicitly published as dynamic `hostServices` and call them through `pluginbridge.Services`. `I18n()` remains a source-plugin runtime capability, while dynamic-plugin i18n resources are discovered, merged, cached, and served by the host. Trusted source-plugin management commands stay in `capability.AdminServices`, and host-internal scope helpers are not exposed to ordinary plugin-facing access.
 
-Source plugins usually use `pluginhost` plus the typed services returned from `pluginhost.Services`. Dynamic plugins usually use `pluginbridge/guest` for guest-side host-service clients and low-level route execution helpers.
+### `AdminServices` and Dynamic Plugins
 
-## Directory Structure
+`capability.AdminServices` is intentionally exposed only through `pluginhost.Services.Admin()` for trusted source plugins. Dynamic plugins do not have an `Admin()` entry in `pluginbridge.Services`, so they cannot directly consume domain `AdminService` interfaces such as `sessioncap.AdminService` or `notifycap.AdminService`.
 
-| Path | Responsibility |
-|------|----------------|
-| `capability/` | Stable host capability directory shared by source plugins and dynamic plugins. It owns aggregate `Services`, `AdminServices`, plugin-scoped service binding, and typed domain contracts. |
-| `pluginbridge/` | Dynamic-plugin bridge namespace. It owns public protocol facades, guest runtime helpers, bridge contracts, and codecs for `Wasm` host calls. |
-| `pluginhost/` | Source-plugin host namespace. It owns compile-time registration facades and runtime callback contracts for embedded source plugins. |
+Dynamic plugins may use only the concrete methods that are explicitly published as dynamic `hostServices`, declared by the plugin manifest, authorized by the host, and registered in the `WASM host-service` dispatcher. For example, the current `sessions` dynamic service publishes `sessions.search` and `sessions.batch_get`; it does not publish `sessioncap.AdminService.Revoke`. If a management command must become available to dynamic plugins, add a narrow, versioned `host-service` method for that command instead of exposing the full `AdminServices` directory.
 
-## `capability` Packages
+| Domain capability | Responsibility boundary | Runtime and validation path |
+| --- | --- | --- |
+| `APIDoc` | Resolves route text and title operation keys in localized API documentation. | Served through the capability directory or `apidoc` host calls; validation focuses on route and operation-key payloads. |
+| `Auth`/`Authz` | Handles tenant token selection or switching, impersonation tokens, permission projections, and permission checks. | Runtime checks use current user, tenant, and permission keys; management commands remain in `AdminServices.Auth()`. |
+| `AI` | Aggregates typed AI sub-capabilities for text, image, embedding, audio, vision, document, safety, and video. | Calls are authorized by method, not resources, and plugin identity is injected into provider requests for audit and governance. |
+| `Users` | Provides user batch lookup, user search, and visibility enforcement. | Host implementations must keep user existence and visibility checks scoped to the caller. |
+| `BizCtx` | Projects the current business request context. | Used as a read-only runtime context bridge for request user, tenant, locale, and request metadata. |
+| `Dict` | Resolves dictionary value labels and validates typed value visibility. | Host validation stays within visible dictionary types and values. |
+| `Files` | Provides host file-center projections and visibility enforcement for existing `sys_file` resources. | Host validation prevents plugins from probing or using file IDs outside their visible boundary; it does not write, read, delete, or list plugin-private objects. |
+| `HostConfig` | Reads governed host runtime configuration values. | Dynamic declarations must list `resources.keys`; source plugins receive a narrow read-only service. |
+| `I18n` | Reads locale, translates messages, and finds message keys for source plugins. | Source plugins receive this through `pluginhost.Services`; dynamic plugins do not receive an `i18n` host service because their i18n resources are host-managed. |
+| `Infra` | Reads infrastructure component status projections. | Validation focuses on visible component IDs and read-only status projection. |
+| `Jobs` | Reads scheduled-job metadata and registers dynamic jobs. | Declaration-time job contracts are validated before runtime job discovery and execution. |
+| `Notifications` | Reads notification messages and sends governed notifications. | Read calls do not require resource declarations; `messages.send` requires a `resources[].ref` boundary. |
+| `Plugins` | Exposes plugin registry projections, plugin-scoped config, enablement state, and tenant lifecycle hooks. | Runtime checks cover plugin visibility, provider enablement, authoritative state, and tenant lifecycle preconditions. |
+| `Route` | Exposes dynamic-route metadata for the current execution. | Used by runtime route dispatch without exposing host router internals. |
+| `Sessions` | Searches and batch-loads online session projections. | Host validation keeps session visibility scoped to the caller. |
+| `Storage` | Provides plugin-private object storage operations for plugin-owned attachments, binary objects, import/export temporaries, and uninstall cleanup. | Source plugins receive plugin-scoped `Storage()` through `pluginhost.Services`; dynamic declarations use `service: storage` with `resources.paths`; writes do not create `sys_file` rows or expose provider keys or local paths. |
+| `Cache` | Provides plugin-scoped cache get, set, delete, increment, and expiry operations. | Dynamic declarations use `resources[].ref`; runtime dispatch validates namespace, key, and TTL payloads. |
+| `Lock` | Provides plugin-visible distributed lock acquire, renew, and release operations. | Dynamic declarations use `resources[].ref`; runtime dispatch validates lock resource and lease payloads. |
+| `Manifest` | Reads plugin-scoped manifest or artifact resources. | Dynamic declarations use `resources.paths`; source and dynamic paths are resolved through plugin-scoped resource views. |
+| `Org` | Provides optional organization projections such as department assignments, department names, and post IDs. | Provider availability is explicit; fallback services return safe neutral values when the organization provider is absent. |
+| `Tenant` | Provides optional tenant context, visibility checks, membership validation, accessible tenant lists, and tenant switching validation. | Provider availability is explicit; host filters apply tenant scope without exposing tenant storage internals. |
 
-`capability` defines the stable host capability directory. Host runtime services implement these interfaces, while plugin code should depend on these narrow contracts.
+## Dynamic-Plugin-Only Capabilities
 
-| Path | Responsibility |
-|------|----------------|
-| `capability/` | Aggregate `Services`, `AdminServices`, and `ServicesForPlugin` binding for plugin-scoped views. |
-| `capability/aicap/` | Root `AI` namespace that aggregates typed `AI` sub capabilities and injects source plugin identity with `ForPlugin`. |
-| `capability/aicap/aicommon/` | Shared `AI` value objects, capability types, methods, tiers, asset references, provider projections, operation references, usage, and unavailable status helpers. |
-| `capability/aicap/aitext/` | Text generation capability contract, provider contract, fallback behavior, and source identity binding. |
-| `capability/aicap/aiimage/` | Image generation and image editing capability contract. |
-| `capability/aicap/aiembedding/` | Embedding creation capability contract. |
-| `capability/aicap/aiaudio/` | Audio transcription and synthesis capability contract. |
-| `capability/aicap/aivision/` | Vision analysis capability contract for images, screenshots, diagrams, and frames. |
-| `capability/aicap/aidocument/` | Document analysis and citation-aware document capability contract. |
-| `capability/aicap/aisafety/` | Safety moderation capability contract for text and asset inputs. |
-| `capability/aicap/aivideo/` | Video generation, editing, extension, and provider operation capability contract. |
-| `capability/apidoccap/` | API-documentation text lookup and route operation-key helpers for source plugins and dynamic routes. |
-| `capability/authcap/` | Authentication and authorization namespace that aggregates token and authorization sub capabilities. |
-| `capability/authcap/authz/` | Authorization-domain read and management contracts without exposing host role, menu, or permission tables. |
-| `capability/authcap/token/` | Tenant token selection, tenant switching, and impersonation token handoff contracts without exposing host JWT internals. |
-| `capability/bizctxcap/` | Read-only business context projection for user, tenant, impersonation, and platform-bypass state. |
-| `capability/cachecap/` | Plugin-scoped runtime cache contract with string and integer value primitives. |
-| `capability/capmodel/` | Shared storage-agnostic domain primitives such as `CapabilityContext`, actor/source metadata, batch results, page results, and localized labels. |
-| `capability/configcap/` | Governed runtime configuration capability contracts for reading and managing host-owned config projections. |
-| `capability/dictcap/` | Dictionary-domain label resolution and refresh contracts without exposing dictionary tables. |
-| `capability/filecap/` | Governed file projections and file deletion contracts without exposing physical paths or storage tables. |
-| `capability/hostconfigcap/` | Read-only host configuration access for authorized source plugins and dynamic `hostconfig` calls. |
-| `capability/i18ncap/` | Runtime locale and translation lookup contracts for source plugins. |
-| `capability/infracap/` | Infrastructure status projections and refresh contracts without leaking concrete runtime backends. |
-| `capability/jobcap/` | Scheduled-job projections and governed job execution or status management contracts. |
-| `capability/manifestcap/` | Plugin-scoped read-only access to resources under `manifest/` for source and dynamic plugins. |
-| `capability/notifycap/` | Notification projections and governed message send/delete contracts without exposing notification tables. |
-| `capability/orgcap/` | Optional organization capability, provider registration, user-department/post projections, and organization scope seams. |
-| `capability/plugincap/` | Plugin-governance projections plus plugin-local config, state, lifecycle, registry, and tenant-default management contracts. |
-| `capability/recordstore/` | Guest-side governed ORM-style facade over authorized dynamic-plugin `data` service tables. |
-| `capability/routecap/` | Dynamic route metadata projection attached to the current request. |
-| `capability/sessioncap/` | Online-session search, batch read, and revocation contracts without exposing session storage. |
-| `capability/tenantcap/` | Optional tenant capability, provider registration, tenant resolution, visibility checks, tenant switching, and tenant scope seams. |
-| `capability/usercap/` | User-domain projections, search, visibility checks, and governed status management without exposing `sys_user`. |
+`Runtime`, `Network`, and `RecordStore` are dynamic-plugin-only entries on `pluginbridge.Services`. They are not part of `capability.Services` because source plugins either already run inside the host process with native equivalents or use source-plugin data access seams instead of guest host-service wrappers.
 
-## `pluginbridge` Responsibilities
+| Capability | Public entry | Boundary reason |
+| --- | --- | --- |
+| `Runtime` | `pluginbridge.Services.Runtime()` | Dynamic plugins need a WASI host-service client for logs, state, time, UUIDs, and node identity; source plugins use host-native logging and runtime context directly. |
+| `Network` | `pluginbridge.Services.Network()` | Dynamic plugins need governed outbound HTTP through host-service authorization; source plugins use host-native HTTP clients or injected domain services. |
+| `RecordStore` | `pluginbridge.Services.RecordStore()` and `pkg/plugin/pluginbridge/recordstore` | Dynamic plugins need a guest-side facade over the data host-service protocol and typed query plans; source plugins use their own DAO or provider seams. |
 
-`pluginbridge` is the dynamic-plugin protocol area. It is used by the host runtime, the dynamic plugin builder, and `Wasm` guest code.
+New capabilities should enter `capability.Services` only when source plugins and dynamic plugins share the same stable host-owned domain contract. Dynamic-only host-service clients and guest SDKs stay under `pluginbridge`.
 
-| Path | Responsibility |
-|------|----------------|
-| `pluginbridge/` | Namespace package documenting that bridge protocol and guest helpers live in subpackages. |
-| `pluginbridge/contract/` | Stable bridge `ABI` constants, route contracts, request/response envelopes, identity snapshots, execution-source values, lifecycle contracts, cron contracts, and validation helpers. |
-| `pluginbridge/guest/` | Guest runtime helpers for exported allocation/execution functions, route dispatch, request binding, router matching, guest-side host-service clients, and raw host-call transport. |
-| `pluginbridge/protocol/` | Public low-level protocol facade for bridge envelopes, artifact metadata, host-call payloads, `hostServices` payloads, codecs, capability constants, and the public `hostServices` catalog. |
+### `Storage()` and `Files()` Boundary
 
-Use `pluginbridge/protocol.HostServiceDescriptors()` when tooling needs the language-neutral `hostServices` catalog. It is the public source developers and tooling should consume for service and method discovery.
+| Scenario | Use | Boundary |
+| --- | --- | --- |
+| A plugin stores its own attachment, generated export, binary object, or temporary import file. | `Storage()` / dynamic `service: storage` | The plugin passes a logical object path. The host scopes it by plugin ID and tenant before delegating to the active storage provider. The object stays outside host file-center lists and does not create `sys_file` metadata. |
+| A plugin deletes, lists, stats, or purges objects it owns during record deletion or uninstall cleanup. | `Storage()` / dynamic `service: storage` | Cleanup uses `Delete` or bounded `List` by logical prefix. Plugins must not delete host upload roots, provider roots, or file-center rows directly. |
+| A plugin references files that users already uploaded into the host file center. | `Files()` / dynamic `service: files` | The plugin receives `filecap.FileProjection` values and visibility checks for host-owned file IDs. The response must not expose DAO, DO, Entity, provider object keys, or local absolute paths. |
+| A plugin command accepts host file IDs from a request. | `Files().EnsureVisible` / `files.visible.ensure` | The command checks all IDs before mutation. Missing and invisible files share the same rejection semantics to avoid existence probing. |
 
-## `pluginhost` Responsibilities
+## Consumer Contracts, Provider SPI, and Guest SDK
 
-`pluginhost` is the source-plugin contract area. Source plugins are compiled into the host and register their backend contribution through grouped facades.
+Plugin-facing packages use three separate boundaries so each caller imports only
+the contract it can safely depend on:
 
-| Area | Responsibility |
-|------|----------------|
-| `SourcePlugin` | Root grouped source-plugin registration contract. It exposes `Assets()`, `Lifecycle()`, `Hooks()`, `HTTP()`, `Cron()`, and `Governance()`. |
-| `Services` | Runtime service directory passed to source-plugin registration and callbacks. It embeds ordinary `capability.Services` and adds source-plugin-only `Admin()` and `TenantFilter()` seams. |
-| Asset registration | `UseEmbeddedFiles` binds plugin-owned embedded files so the host can serve manifest and public assets. |
-| Lifecycle registration | Registers precondition, custom upgrade, cleanup, and post-notification callbacks for install, upgrade, disable, uninstall, tenant disable/delete, and install-mode changes. |
-| Hook registration | Registers callback-style hook handlers for published backend extension points. |
-| HTTP registration | Registers source-plugin routes under the plugin API namespace and captures route bindings for host governance. |
-| Cron registration | Registers guarded cron jobs that check plugin enablement at execution time and expose primary-node inspection. |
-| Governance registration | Registers menu and permission filters used by the host governance pipeline. |
+| Boundary | Package shape | Intended callers | Must not contain |
+| --- | --- | --- | --- |
+| Ordinary consumer contract | `pkg/plugin/capability/<domain>cap` | Source plugins through `pluginhost.Services`, dynamic plugins through generated or bridge-backed clients, and host adapters | GoFrame database builders, GoFrame HTTP request objects, provider factory registration, or host-private implementation state |
+| Source-plugin provider SPI | `pkg/plugin/capability/<domain>cap/<domain>spi` | Source plugins that implement a host domain provider, plus host capability assembly code | Dynamic-plugin guest SDK imports or WASM host-service wire contracts |
+| Dynamic-plugin guest SDK | `pkg/plugin/pluginbridge` and its dynamic-only subpackages | WASM guest code and dynamic plugin builders | Provider SPI imports or source-plugin registration APIs |
 
-Published backend extension points include `auth.login.succeeded`, `auth.login.failed`, `auth.logout.succeeded`, `plugin.installed`, `plugin.enabled`, `plugin.disabled`, `plugin.uninstalled`, `plugin.upgraded`, `system.started`, `http.route.register`, `cron.register`, `menu.filter`, and `permission.filter`.
+Provider factory declarations belong to `pluginhost.Declarations.Providers()`.
+Source provider plugins declare factories there with domain-specific methods such
+as `ProvideTenant`, `ProvideOrg`, and `ProvideAIText`. Host startup owns the
+provider manager instances and injects the shared managers into host capability
+services; ordinary `capability` packages do not keep package-level provider
+registries.
 
-## `plugin.yaml` `hostServices`
+## Host Domain Implementation
 
-Dynamic plugins declare host access in `plugin.yaml` with `hostServices`. Each declaration uses a service name, method names, and the resource declaration shape required by that service.
+`apps/lina-core/internal/service/plugin` is the host-side plugin domain component. The root package exposes a unified facade covering plugin discovery, management lists, install, enable, disable, uninstall, runtime upgrades, source upgrades, runtime route dispatch, frontend asset serving, dependency checks, and capability wiring.
 
-Example:
+## Declaration-Time and Runtime Capabilities
+
+### Declaration-Time Capabilities
+
+Declaration-time capabilities are the plugin's static declarations and registration output. The host uses them before business execution to build governance state.
+
+Source plugins express declaration-time contracts through `pluginhost.Declarations`, including `Assets()`, `Lifecycle()`, `Hooks()`, `HTTP()`, `Jobs()`, and `Access()`.
+
+Dynamic plugins express declaration-time contracts through `plugin.yaml`, WASM custom sections, `pluginbridge.Declarations.Routes().Group(...)`, `pluginbridge.Declarations.Jobs().Register(...)`, and embedded `protocol` contracts, such as routes, jobs, lifecycle handlers, backend resources, frontend assets, SQL, i18n resources, and `hostServices`.
+
+### Runtime Capabilities
+
+Runtime capabilities are the services available while plugin business logic is executing.
+
+Source plugins access runtime capabilities through `pluginhost.Services`; this interface embeds ordinary `capability.Services` and additionally provides trusted source-plugin-only capabilities such as `Admin()` and `TenantFilter()`.
+
+Dynamic plugins access published runtime capabilities through `pluginbridge.Services`. Calls are encoded through `pluginbridge/protocol`, transported through `WASI host call`, authorized by derived `HostCapabilities` and confirmed `HostServices`, then dispatched by `apps/lina-core/internal/service/plugin/internal/wasm`. This runtime directory does not expose source-plugin-only entries such as `Admin()`, `TenantFilter()`, or `I18n()`.
+
+For each guest execution, the host builds a request-local `HostServices` authorization snapshot and every host call still checks `service`, `method`, and resource identity against that snapshot.
+
+## Dynamic Plugin Host Service Declarations
+
+Minimal shape:
 
 ```yaml
 hostServices:
   - service: runtime
     methods:
       - log.write
-      - state.get
-      - state.set
-  - service: storage
-    methods:
-      - put
-      - get
-      - list
-    paths:
-      - exports/
-  - service: data
-    methods:
-      - list
-      - get
-    tables:
-      - plugin_demo_reports
-  - service: network
-    methods:
-      - request
-    resources:
-      - ref: https://api.example.com/v1/*
-  - service: ai
-    methods:
-      - text.generate
-    resources:
-      - ref: purpose:report.summary
-        attributes:
-          defaultTier: standard
 ```
 
-Resource declaration shapes:
+Resource-scoped shape:
 
-| Resource kind | Declaration fields | Services |
-|---------------|--------------------|----------|
-| `none` | No `paths`, `tables`, `keys`, or `resources`. | `runtime`, `cron`, `config`, `org`, `tenant` |
-| `path` | `paths` | `storage`, `manifest` |
-| `table` | `tables` | `data` |
-| `key` | `keys` | `hostconfig` |
-| `resource` | `resources[].ref` plus service-specific governance fields. | `network`, `cache`, `lock`, `notify`, `ai` |
+```yaml
+hostServices:
+  - service: storage
+    methods: [get, put, put.init, put.chunk, put.commit, put.abort]
+    resources:
+      paths:
+        - reports/
+  - service: data
+    methods: [list, get]
+    resources:
+      tables:
+        - plugin_acme_demo_report
+  - service: hostconfig
+    methods: [get]
+    resources:
+      keys:
+        - i18n.default
+  - service: network
+    methods: [request]
+    resources:
+      - url: https://*.example.com/api
+  - service: notifications
+    methods: [messages.send]
+    resources:
+      - ref: inbox
+        attributes:
+          channel: inbox
+```
 
-`data` service tables are plugin-owned in production validation. A dynamic plugin must not declare host core tables such as `sys_*`.
+## Declarable Host Services
 
-`network` resources use authorized `http` or `https` URL patterns. `ai` resources use `purpose:<name>` refs and may include governed attributes such as `defaultTier`, `maxOutputTokens`, `maxPayloadBytes`, `maxInputAssets`, `maxOutputAssets`, `maxAssetBytes`, `allowOperation`, `allowOperationCancel`, and `allowedMimeTypes`.
+<!-- BEGIN generated:host-services -->
+| Service | Resource declaration | Derived capability | Methods |
+| --- | --- | --- | --- |
+| `runtime` | None | `host:runtime` | `log.write`<br/>`state.get`<br/>`state.set`<br/>`state.delete`<br/>`info.now`<br/>`info.uuid`<br/>`info.node` |
+| `storage` | `resources.paths` | `host:storage` | `put`<br/>`put.init`<br/>`put.chunk`<br/>`put.commit`<br/>`put.abort`<br/>`get`<br/>`delete`<br/>`list`<br/>`stat` |
+| `network` | `resources[].url` | `host:http:request` | `request` |
+| `data` | `resources.tables` | `host:data:read`<br/>`host:data:mutate` | `list`<br/>`get`<br/>`create`<br/>`update`<br/>`delete`<br/>`transaction` |
+| `cache` | `resources[].ref` | `host:cache` | `get`<br/>`set`<br/>`delete`<br/>`incr`<br/>`expire` |
+| `lock` | `resources[].ref` | `host:lock` | `acquire`<br/>`renew`<br/>`release` |
+| `secret` | `resources[].ref` | `host:secret` | `resolve` reserved |
+| `event` | `resources[].ref` | `host:event:publish` | `publish` reserved |
+| `queue` | `resources[].ref` | `host:queue:enqueue` | `enqueue` reserved |
+| `hostconfig` | `resources.keys` | `host:hostconfig` | `get` |
+| `manifest` | `resources.paths` | `host:manifest` | `get` |
+| `apidoc` | None | `host:apidoc` | `route_text.resolve`<br/>`route_texts.resolve`<br/>`route_title_operation_keys.find` |
+| `auth` | None | `host:auth:token` | `tenant.select`<br/>`tenant.switch`<br/>`impersonation_token.issue`<br/>`impersonation_token.revoke` |
+| `authz` | None | `host:authz` | `permissions.batch_get`<br/>`permissions.has`<br/>`users.platform_admin.check` |
+| `ai` | None | `host:ai:text`<br/>`host:ai:image`<br/>`host:ai:embedding`<br/>`host:ai:audio`<br/>`host:ai:vision`<br/>`host:ai:document`<br/>`host:ai:safety`<br/>`host:ai:video` | `text.generate`<br/>`image.generate`<br/>`image.edit`<br/>`embedding.create`<br/>`audio.transcribe`<br/>`audio.synthesize`<br/>`vision.analyze`<br/>`document.analyze`<br/>`document.cite`<br/>`safety.moderate`<br/>`video.generate`<br/>`video.edit`<br/>`video.extend`<br/>`video.operation.get`<br/>`video.operation.cancel` |
+| `users` | None | `host:users` | `users.batch_get`<br/>`users.search`<br/>`users.visible.ensure` |
+| `bizctx` | None | `host:bizctx` | `current.get` |
+| `dict` | None | `host:dict` | `labels.resolve` |
+| `files` | None | `host:files` | `files.batch_get`<br/>`files.visible.ensure` |
+| `infra` | None | `host:infra` | `status.batch_get` |
+| `jobs` | None | `host:jobs` | `jobs.batch_get`<br/>`jobs.register` |
+| `notifications` | None for reads; `messages.send` uses `resources[].ref` | `host:notifications` | `messages.batch_get`<br/>`messages.send` |
+| `plugins` | None | `host:plugins` | `plugins.batch_get`<br/>`plugins.tenant.list`<br/>`plugins.enabled.check`<br/>`plugins.provider_enabled.check`<br/>`plugins.enabled_authoritative.check`<br/>`config.get`<br/>`lifecycle.tenant_plugin_disable.ensure`<br/>`lifecycle.tenant_plugin_disabled.notify`<br/>`lifecycle.tenant_delete.ensure`<br/>`lifecycle.tenant_deleted.notify` |
+| `route` | None | `host:route` | `metadata.get` |
+| `sessions` | None | `host:sessions` | `sessions.search`<br/>`sessions.batch_get` |
+| `org` | None | `host:org` | `capability.available`<br/>`capability.status`<br/>`users.dept_assignments.list`<br/>`users.dept_info.get`<br/>`users.dept_name.get`<br/>`users.dept_ids.get`<br/>`users.post_ids.get` |
+| `tenant` | None | `host:tenant` | `capability.available`<br/>`capability.status`<br/>`tenants.current`<br/>`tenants.platform_bypass`<br/>`tenants.visible.ensure`<br/>`users.tenant_membership.validate`<br/>`users.tenants.list`<br/>`tenants.switch.validate` |
+<!-- END generated:host-services -->
 
-`config`, `hostconfig`, and `manifest` default to `get` when methods are omitted. The dynamic guest config helpers such as `Exists`, `String`, `Bool`, `Int`, and `Duration` map through `config.get`; `plugin.yaml` should still declare `config.get`.
+## Maintenance Notes
 
-## Dynamic Plugin `hostServices` Catalog
-
-This chapter lists the `hostServices` service names dynamic plugins can declare in `plugin.yaml`, the methods under each service, and the purpose of each method. The machine-readable public source is `pluginbridge/protocol.HostServiceDescriptors()`.
-
-### Service Summary
-
-| Service | Resource kind | Purpose |
-|---------|---------------|---------|
-| `runtime` | `none` | Runtime logs, plugin-scoped state, host time, host-generated IDs, and node identity. |
-| `cron` | `none` | Dynamic-plugin cron declaration during host-side discovery. |
-| `storage` | `path` | Governed plugin storage object operations under authorized logical paths. |
-| `network` | `resource` | Governed outbound `HTTP` requests to authorized URL patterns. |
-| `data` | `table` | Governed reads and mutations against plugin-owned authorized tables. |
-| `cache` | `resource` | Governed cache reads, writes, integer increments, and expiration updates. |
-| `lock` | `resource` | Governed distributed lock acquire, renew, and release operations. |
-| `notify` | `resource` | Governed notification message dispatch. |
-| `config` | `none` | Read-only access to the current plugin runtime configuration. |
-| `hostconfig` | `key` | Read-only access to explicitly authorized host configuration keys. |
-| `manifest` | `path` | Read-only access to plugin-scoped resources under `manifest/`. |
-| `ai` | `resource` | Governed typed `AI` calls authorized by `purpose:<name>` resources. |
-| `org` | `none` | Organization capability status and user organization projections. |
-| `tenant` | `none` | Tenant capability status, current tenant, visibility, membership, and switch checks. |
-
-### Method Details
-
-#### `runtime`
-
-| Method | Purpose |
-|--------|---------|
-| `log.write` | Write one structured runtime log entry for the plugin. |
-| `state.get` | Read one plugin-scoped runtime state value. |
-| `state.set` | Write one plugin-scoped runtime state value. |
-| `state.delete` | Delete one plugin-scoped runtime state value. |
-| `info.now` | Return host time information. |
-| `info.uuid` | Return one host-generated unique identifier. |
-| `info.node` | Return host node identity information. |
-
-#### `cron`
-
-| Method | Purpose |
-|--------|---------|
-| `register` | Register one dynamic-plugin cron contract with the current host-side discovery collector. |
-
-#### `storage`
-
-| Method | Purpose |
-|--------|---------|
-| `put` | Write one governed storage object. |
-| `get` | Read one governed storage object. |
-| `delete` | Delete one governed storage object. |
-| `list` | List governed storage objects under one authorized prefix. |
-| `stat` | Read metadata for one governed storage object. |
-
-#### `network`
-
-| Method | Purpose |
-|--------|---------|
-| `request` | Execute one governed outbound `HTTP` request. |
-
-#### `data`
-
-| Method | Purpose |
-|--------|---------|
-| `list` | Execute one governed paged list query against an authorized plugin-owned table. |
-| `get` | Read one governed record by key from an authorized plugin-owned table. |
-| `create` | Create one governed record in an authorized plugin-owned table. |
-| `update` | Update one governed record in an authorized plugin-owned table. |
-| `delete` | Delete one governed record in an authorized plugin-owned table. |
-| `transaction` | Execute one governed transaction over structured data mutations. |
-
-#### `cache`
-
-| Method | Purpose |
-|--------|---------|
-| `get` | Read one governed cache value. |
-| `set` | Write one governed cache value. |
-| `delete` | Remove one governed cache value. |
-| `incr` | Increment one governed cache integer value. |
-| `expire` | Update one governed cache expiration policy. |
-
-#### `lock`
-
-| Method | Purpose |
-|--------|---------|
-| `acquire` | Acquire one governed distributed lock. |
-| `renew` | Renew one governed distributed lock. |
-| `release` | Release one governed distributed lock. |
-
-#### `notify`
-
-| Method | Purpose |
-|--------|---------|
-| `send` | Send one governed notification message. |
-
-#### `config`
-
-| Method | Purpose |
-|--------|---------|
-| `get` | Read one current-plugin configuration value as `JSON`. |
-
-`config` only publishes `get` in `plugin.yaml`. Guest helpers such as `Exists`, `String`, `Bool`, `Int`, and `Duration` are convenience adapters over `config.get`.
-
-#### `hostconfig`
-
-| Method | Purpose |
-|--------|---------|
-| `get` | Read one authorized host configuration value. |
-
-#### `manifest`
-
-| Method | Purpose |
-|--------|---------|
-| `get` | Read one plugin-scoped manifest resource. |
-
-#### `ai`
-
-| Method | Purpose |
-|--------|---------|
-| `text.generate` | Execute one governed text generation request. |
-| `image.generate` | Execute one governed image generation request. |
-| `image.edit` | Execute one governed image editing request. |
-| `embedding.create` | Execute one governed embedding request. |
-| `audio.transcribe` | Execute one governed audio transcription request. |
-| `audio.synthesize` | Execute one governed audio synthesis request. |
-| `vision.analyze` | Execute one governed visual analysis request. |
-| `document.analyze` | Execute one governed document analysis request. |
-| `document.cite` | Execute one governed citation-aware document request. |
-| `safety.moderate` | Execute one governed safety moderation request. |
-| `video.generate` | Execute one governed video generation request. |
-| `video.edit` | Execute one governed video editing request. |
-| `video.extend` | Execute one governed video extension request. |
-| `video.operation.get` | Read one governed provider operation. |
-| `video.operation.cancel` | Cancel one governed provider operation. |
-
-#### `org`
-
-| Method | Purpose |
-|--------|---------|
-| `capability.available` | Report whether the organization capability is available. |
-| `capability.status` | Read organization capability status. |
-| `users.dept_assignments.list` | List user department assignments in batch. |
-| `users.dept_info.get` | Read one user's department identifier and name. |
-| `users.dept_name.get` | Read one user's department name. |
-| `users.dept_ids.get` | Read one user's department identifiers. |
-| `users.post_ids.get` | Read one user's post identifiers. |
-
-#### `tenant`
-
-| Method | Purpose |
-|--------|---------|
-| `capability.available` | Report whether the tenant capability is available. |
-| `capability.status` | Read tenant capability status. |
-| `tenants.current` | Read the current request tenant. |
-| `tenants.platform_bypass` | Report whether tenant filtering may be bypassed. |
-| `tenants.visible.ensure` | Validate that the current user can access one tenant. |
-| `users.tenant_membership.validate` | Validate one user's tenant membership. |
-| `users.tenants.list` | List tenants visible to one user. |
-| `tenants.switch.validate` | Validate one tenant switch target. |
-
-Reserved governance entries currently exist for `secret.resolve`, `event.publish`, and `queue.enqueue`. They are part of the descriptor catalog for future governance alignment, but they are not published guest-callable methods and should not be used for executable dynamic plugin calls until host dispatcher and guest SDK support is added.
-
-## Developer Guide
-
-- Use `capability.Services` when a source plugin or host package needs ordinary read-oriented plugin-facing capabilities.
-- Use `capability.AdminServices` only for trusted source-plugin management commands. Keep those dependencies narrow and pass `CapabilityContext` through domain services.
-- Use `pluginbridge/guest.Default()` or `pluginbridge/guest.New()` inside dynamic plugin guest code for `runtime`, `storage`, `network`, `recordstore`, `cache`, `lock`, `config`, `notify`, `cron`, `hostconfig`, `manifest`, `org`, `tenant`, `plugin`, and `AI` clients.
-- Use `pluginhost.SourcePlugin` from source-plugin registrars to declare embedded files, routes, lifecycle callbacks, hooks, cron jobs, and governance filters.
-- Use `pluginbridge/contract` for dynamic route and artifact contracts, `pluginbridge/guest` for guest route execution, and `pluginbridge/protocol` for low-level payloads or tooling that needs the public protocol catalog.
-- Keep new capability contracts storage-agnostic, batch-oriented for high-volume reads, and explicit about data visibility. Do not add a capability method that forces plugins to know host table names or host cache keys.
+When plugin public contracts or dynamic `host service` descriptors change, update both `README.md` and `README.zh-CN.md` in this directory.
