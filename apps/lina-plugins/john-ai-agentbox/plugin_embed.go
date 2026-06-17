@@ -18,7 +18,7 @@ const pluginID = "john-ai-agentbox"
 // embeddedFiles contains only the plugin lifecycle resources and declared
 // public frontend assets that the host is allowed to discover and serve.
 //
-//go:embed plugin.yaml backend/plugin.go manifest/config/*.yaml manifest/sql/*.sql manifest/sql/uninstall/*.sql frontend/public/**/* frontend/public/*
+//go:embed plugin.yaml backend/plugin.go manifest/config/*.yaml manifest/sql/*.sql manifest/sql/uninstall/*.sql frontend/dist/**/* frontend/dist/*
 var embeddedFiles embed.FS
 
 func init() {

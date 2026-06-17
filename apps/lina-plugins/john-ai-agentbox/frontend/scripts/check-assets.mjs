@@ -10,7 +10,7 @@ import {
 import { dirname, extname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const distDir = fileURLToPath(new URL("../public", import.meta.url));
+const distDir = fileURLToPath(new URL("../dist", import.meta.url));
 const args = new Set(process.argv.slice(2));
 const shouldCompress = args.has("--compress");
 const shouldSkipBudget = args.has("--no-budget");

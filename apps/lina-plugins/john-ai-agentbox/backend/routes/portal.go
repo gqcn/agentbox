@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	portalIndexAssetPath  = "frontend/public/index.html"
+	portalIndexAssetPath  = "frontend/dist/index.html"
 	portalHTMLContentType = "text/html; charset=utf-8"
 )
 

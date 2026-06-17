@@ -1,13 +1,5 @@
-import { expect } from '../../../../../../hack/tests/fixtures/auth';
+import { expect, type Locator, type Page } from '../../../../../../hack/tests/fixtures/auth';
 import { agentBoxPublicPath } from '../support/plugin';
-
-type AgentBoxLocator = any;
-type AgentBoxPage = {
-  getByTestId: (testId: string) => any;
-  goto: (url: string) => Promise<unknown>;
-  waitForLoadState: (state: 'networkidle') => Promise<unknown>;
-  waitForURL: (url: RegExp) => Promise<unknown>;
-};
 
 /**
  * AgentBoxPortalPage models the plugin-owned portal login flow.
@@ -15,48 +7,82 @@ type AgentBoxPage = {
  * inside the plugin test boundary so host workbench selectors do not leak in.
  */
 export class AgentBoxPortalPage {
-  readonly page: AgentBoxPage;
+  readonly page: Page;
 
-  constructor(page: AgentBoxPage) {
+  constructor(page: Page) {
     this.page = page;
   }
 
-  get portalGate(): AgentBoxLocator {
+  get portalGate(): Locator {
     return this.page.getByTestId('portal-auth-gate');
   }
 
-  get portalLoginLink(): AgentBoxLocator {
+  get portalLoginLink(): Locator {
     return this.page.getByTestId('portal-login-link');
   }
 
-  get loginPage(): AgentBoxLocator {
+  get loginPage(): Locator {
     return this.page.getByTestId('login-page');
   }
 
-  get loginUsername(): AgentBoxLocator {
+  get loginUsername(): Locator {
     return this.page.getByTestId('login-username');
   }
 
-  get loginPassword(): AgentBoxLocator {
+  get loginPassword(): Locator {
     return this.page.getByTestId('login-password');
   }
 
-  get loginSubmit(): AgentBoxLocator {
+  get loginSubmit(): Locator {
     return this.page.getByTestId('login-submit');
   }
 
-  get appShell(): AgentBoxLocator {
+  get appShell(): Locator {
     return this.page.getByTestId('agentbox-app-shell');
   }
 
-  get logoutButton(): AgentBoxLocator {
+  get logoutButton(): Locator {
     return this.page.getByTestId('agentbox-logout-button');
+  }
+
+  get createAgentButton(): Locator {
+    return this.page.getByRole('button', { name: '新增智能体' });
+  }
+
+  get providersViewButton(): Locator {
+    return this.page.getByRole('button', { name: '供应商' });
+  }
+
+  get createProviderButton(): Locator {
+    return this.page.getByRole('button', { name: '新增供应商' });
+  }
+
+  get agentDialog(): Locator {
+    return this.page.getByRole('dialog', { name: '新增智能体' });
+  }
+
+  get providerDialog(): Locator {
+    return this.page.getByRole('dialog', { name: '新增供应商' });
+  }
+
+  get agentProviderSelect(): Locator {
+    return this.agentDialog.getByLabel('供应商');
+  }
+
+  get providerAnthropicBaseUrlInput(): Locator {
+    return this.providerDialog.getByLabel('Anthropic 接入地址');
   }
 
   async gotoRoot() {
     await this.page.goto(agentBoxPublicPath('/'));
     await this.page.waitForLoadState('networkidle');
     await expect(this.portalGate).toBeVisible();
+  }
+
+  async gotoApp() {
+    await this.page.goto(agentBoxPublicPath('/'));
+    await this.page.waitForLoadState('networkidle');
+    await expect(this.appShell).toBeVisible({ timeout: 15000 });
   }
 
   async gotoLogin() {
@@ -80,6 +106,17 @@ export class AgentBoxPortalPage {
   async loginAndWaitForApp(username: string, password: string) {
     await this.login(username, password);
     await expect(this.appShell).toBeVisible({ timeout: 15000 });
+  }
+
+  async openCreateAgentDialog() {
+    await this.createAgentButton.click();
+    await expect(this.agentDialog).toBeVisible();
+  }
+
+  async openCreateProviderDialog() {
+    await this.providersViewButton.click();
+    await this.createProviderButton.click();
+    await expect(this.providerDialog).toBeVisible();
   }
 
   async logoutAndWaitForPortal() {

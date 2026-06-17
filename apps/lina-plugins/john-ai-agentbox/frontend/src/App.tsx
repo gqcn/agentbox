@@ -3292,10 +3292,14 @@ function AgentDialog(props: {
         </Field>
         <Field label="供应商">
           <Select
+            disabled={props.providers.length === 0}
             required
-            value={props.form.providerId}
+            value={props.form.providerId || ""}
             onChange={(event) => setProvider(Number(event.target.value))}
           >
+            <SelectOption value="" disabled>
+              {props.providers.length === 0 ? "暂无供应商" : "选择供应商"}
+            </SelectOption>
             {props.providers.map((provider) => (
               <SelectOption key={provider.id} value={provider.id}>
                 {provider.name}
@@ -4135,7 +4139,7 @@ function blankProviderForm(): ProviderForm {
     notes: "",
     apiKey: "",
     openaiBaseUrl: "",
-    anthropicBaseUrl: "https://api.anthropic.com/v1",
+    anthropicBaseUrl: "",
   };
 }
 

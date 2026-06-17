@@ -36,9 +36,9 @@
 
 ### 插件内部精确页面入口，不扩展宿主 fallback
 
-AgentBox 页面入口通过`john-ai-agentbox`源码插件自身的`http.route.register`回调注册两个精确路由：`GET /`和`GET /login`。这两个入口不注册通配符，不提供宿主级 SPA fallback，也不修改`plugin.yaml`清单协议。`GET /`直接返回插件嵌入的`frontend/public/index.html`作为 AgentBox 工作台入口，浏览器地址保持为`/`，不把用户重定向到`/x-assets/john-ai-agentbox/{version}/index.html`；静态 JS/CSS 继续由宿主已有`/x-assets`能力按`public_assets`边界提供。
+AgentBox 页面入口通过`john-ai-agentbox`源码插件自身的`http.route.register`回调注册两个精确路由：`GET /`和`GET /login`。这两个入口不注册通配符，不提供宿主级 SPA fallback，也不修改`plugin.yaml`清单协议。`GET /`直接返回插件嵌入的`frontend/dist/index.html`作为 AgentBox 工作台入口，浏览器地址保持为`/`，不把用户重定向到`/x-assets/john-ai-agentbox/{version}/index.html`；静态 JS/CSS 继续由宿主已有`/x-assets`能力按`public_assets`边界提供。
 
-`/login`入口同样直接返回插件嵌入的`frontend/public/index.html`，前端根据当前浏览器路径渲染独立登录页，避免浏览器刷新依赖宿主 catch-all。登录成功后前端把地址栏恢复为`/`并回到 AgentBox 应用壳。`/admin`、`/api/**`、`/x/**`、`/x-assets/**`和`/api.json`继续由宿主既有路由与资产处理，不引入新的主框架路由优先级规则。
+`/login`入口同样直接返回插件嵌入的`frontend/dist/index.html`，前端根据当前浏览器路径渲染独立登录页，避免浏览器刷新依赖宿主 catch-all。登录成功后前端把地址栏恢复为`/`并回到 AgentBox 应用壳。`/admin`、`/api/**`、`/x/**`、`/x-assets/**`和`/api.json`继续由宿主既有路由与资产处理，不引入新的主框架路由优先级规则。
 
 曾评估过新增宿主通用插件门户 fallback，但这会修改`apps/lina-core`清单字段、运行时 fallback、缓存和测试，超出本次插件迁移边界。也不采用插件`/*`通配 fallback，因为该方案会吞掉宿主和其他插件路径。精确`GET /`与`GET /login`是当前范围内最小实现。
 

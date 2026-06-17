@@ -9,6 +9,6 @@ description: AgentBox.
 author: john
 license: MIT
 public_assets:
-  - source: frontend/public
+  - source: frontend/dist
     mount: /
     index: index.html
